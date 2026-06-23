@@ -1,5 +1,5 @@
 import { Bus, BusFront, Van } from 'lucide-react'
-import type { VehicleType } from '../data/vehicles'
+import type { VehicleType } from '../types/database'
 
 interface VehicleIconProps {
   type: VehicleType
@@ -7,7 +7,7 @@ interface VehicleIconProps {
   variant?: 'plain' | 'boxed'
 }
 
-const icons = { combi: Van, bus1: Bus, bus2: BusFront }
+const icons = { combi: Van, traffic: Van, bus1: Bus, bus2: BusFront }
 
 const sizes = {
   sm: { box: 'h-8 w-8', icon: 'h-4 w-4' },
@@ -16,9 +16,10 @@ const sizes = {
 }
 
 const typeColors = {
-  combi: 'from-cyan-500/20 to-blue-500/20 text-cyan-400 border-cyan-500/20',
-  bus1: 'from-blue-500/20 to-indigo-500/20 text-blue-400 border-blue-500/20',
-  bus2: 'from-violet-500/20 to-purple-500/20 text-violet-400 border-violet-500/20',
+  combi: 'from-primary-muted to-primary/10 text-brand border-primary/20',
+  traffic: 'from-sky-100 to-primary/10 text-brand border-primary/25',
+  bus1: 'from-primary/15 to-brand-light/15 text-brand border-primary/25',
+  bus2: 'from-brand-dark/10 to-primary/20 text-brand-dark border-brand-dark/20',
 }
 
 export function VehicleIcon({ type, size = 'md', variant = 'boxed' }: VehicleIconProps) {
@@ -36,10 +37,4 @@ export function VehicleIcon({ type, size = 'md', variant = 'boxed' }: VehicleIco
       <Icon className={s.icon} aria-hidden />
     </div>
   )
-}
-
-export function getTypeLabel(type: VehicleType): string {
-  if (type === 'combi') return 'Combi'
-  if (type === 'bus1') return '1 piso'
-  return '2 pisos'
 }
