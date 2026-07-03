@@ -13,24 +13,18 @@ export interface CombinationOption {
   price: number
 }
 
+import type { MapPoint } from './routing'
+
 export interface QuoteResult {
   distance: number
+  durationMinutes?: number
+  originResolved?: string
+  destinationResolved?: string
+  originPoint?: MapPoint
+  destinationPoint?: MapPoint
+  routePath?: [number, number][]
   options: QuoteOption[]
   combinations: CombinationOption[]
-}
-
-function hashSeed(text: string): number {
-  let hash = 0
-  for (let i = 0; i < text.length; i++) {
-    hash = (hash << 5) - hash + text.charCodeAt(i)
-    hash |= 0
-  }
-  return Math.abs(hash)
-}
-
-export function simulateDistance(origin: string, destination: string): number {
-  const seed = hashSeed(`${origin.trim().toLowerCase()}|${destination.trim().toLowerCase()}`)
-  return 50 + (seed % 451)
 }
 
 export function formatCurrency(value: number): string {
@@ -105,16 +99,18 @@ function findCombinations(
 }
 
 export function calculateQuote(
-  origin: string,
-  destination: string,
   passengers: number,
   vehiculos: Vehiculo[],
+  distance: number,
+  routeMeta?: Pick<
+    QuoteResult,
+    'durationMinutes' | 'originResolved' | 'destinationResolved' | 'originPoint' | 'destinationPoint' | 'routePath'
+  >,
 ): QuoteResult | null {
-  if (!origin.trim() || !destination.trim() || passengers < 1 || vehiculos.length === 0) {
+  if (passengers < 1 || vehiculos.length === 0 || distance <= 0) {
     return null
   }
 
-  const distance = simulateDistance(origin, destination)
   const options = vehiculos
     .filter((v) => v.capacidad >= passengers && v.estado === 'Disponible')
     .map((vehiculo) => ({
@@ -125,5 +121,15 @@ export function calculateQuote(
 
   const combinations = options.length === 0 ? findCombinations(passengers, distance, vehiculos) : []
 
-  return { distance, options, combinations }
+  return {
+    distance,
+    durationMinutes: routeMeta?.durationMinutes,
+    originResolved: routeMeta?.originResolved,
+    destinationResolved: routeMeta?.destinationResolved,
+    originPoint: routeMeta?.originPoint,
+    destinationPoint: routeMeta?.destinationPoint,
+    routePath: routeMeta?.routePath,
+    options,
+    combinations,
+  }
 }

@@ -34,15 +34,24 @@ const allNavItems: {
   { id: 'facturacion', label: 'Facturación', icon: Wallet, description: 'Cobros y caja', adminOnly: true },
 ]
 
+const accountNavItem = {
+  id: 'cuenta' as TabId,
+  label: 'Mi cuenta',
+  description: 'Configuración de usuario',
+}
+
 export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
   const { profile, isAdmin, signOut } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const navItems = allNavItems.filter((item) => !item.adminOnly || isAdmin)
-  const activeItem = navItems.find((n) => n.id === activeTab) ?? navItems[0]
+  const activeItem =
+    activeTab === 'cuenta'
+      ? accountNavItem
+      : (navItems.find((n) => n.id === activeTab) ?? navItems[0])
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {sidebarOpen && (
         <button
           type="button"
@@ -53,14 +62,14 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col glass-panel-dark shadow-xl shadow-brand-dark/20 transition-transform duration-300 lg:static lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-72 flex-col glass-panel-dark shadow-xl shadow-brand-dark/20 transition-transform duration-300 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        <div className="border-b border-white/10 px-5 py-5">
+        <div className="shrink-0 border-b border-white/10 px-5 py-5">
           <div className="flex items-start gap-3">
-            <div className="flex-1 rounded-lg bg-white px-3 py-2 shadow-sm">
-              <img src="/logo.png" alt="San Sebastián" className="h-12 w-full object-contain object-left" />
+            <div className="flex-1 rounded-lg bg-white px-3 py-3 shadow-sm">
+              <img src="/logo.png" alt="San Sebastián" className="h-36 w-full object-contain object-left" />
             </div>
             <button type="button" className="ml-auto rounded-lg p-1.5 text-white/70 hover:bg-white/10 lg:hidden" onClick={() => setSidebarOpen(false)}>
               <X className="h-5 w-5" />
@@ -69,7 +78,7 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
           <div className="brand-speed-lines mt-4 rounded-full" />
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
           <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white/40">Módulos</p>
           {navItems.map((item) => {
             const Icon = item.icon
@@ -99,16 +108,26 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
           })}
         </nav>
 
-        <div className="border-t border-white/10 p-4 space-y-2">
-          <div className="rounded-xl bg-white/10 p-3">
+        <div className="shrink-0 space-y-2 border-t border-white/10 p-4">
+          <button
+            type="button"
+            onClick={() => {
+              onTabChange('cuenta')
+              setSidebarOpen(false)
+            }}
+            className={`w-full rounded-xl p-3 text-left transition-all ${
+              activeTab === 'cuenta' ? 'bg-white/15 ring-1 ring-white/20' : 'bg-white/10 hover:bg-white/15'
+            }`}
+          >
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-xs font-bold text-brand">SS</div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-white">{profile?.nombre ?? 'Usuario'}</p>
                 <p className="truncate text-xs text-white/50">{profile?.rol ?? '—'}</p>
               </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-white/50" />
             </div>
-          </div>
+          </button>
           <button
             type="button"
             onClick={() => signOut()}
@@ -120,8 +139,8 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 glass-panel border-b border-primary/10">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:ml-72">
+        <header className="z-30 shrink-0 glass-panel border-b border-primary/10">
           <div className="flex items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
             <button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-primary-muted lg:hidden" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
@@ -136,11 +155,11 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-6xl">{children}</div>
         </main>
 
-        <footer className="border-t border-primary/10 px-6 py-4 text-center text-xs text-slate-500">
+        <footer className="shrink-0 border-t border-primary/10 px-6 py-4 text-center text-xs text-slate-500">
           San Sebastián · Autotransporte de pasajeros · Beta v2.0 · Supabase
         </footer>
       </div>

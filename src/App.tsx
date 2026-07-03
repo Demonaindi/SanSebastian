@@ -5,6 +5,7 @@ import { LoginView } from './components/auth/LoginView'
 import { AgendaView } from './components/AgendaView'
 import { ChoferesView } from './components/ChoferesView'
 import { CotizadorView } from './components/CotizadorView'
+import { CuentaView } from './components/CuentaView'
 import { FacturacionView } from './components/FacturacionView'
 import { FlotaView } from './components/FlotaView'
 import { AppShell } from './components/layout/AppShell'
@@ -21,6 +22,7 @@ function AppContent() {
       {activeTab === 'agenda' && <AgendaView />}
       {activeTab === 'choferes' && <ChoferesView />}
       {activeTab === 'facturacion' && <FacturacionView />}
+      {activeTab === 'cuenta' && <CuentaView />}
     </AppShell>
   )
 }

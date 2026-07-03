@@ -162,6 +162,23 @@ begin
 end;
 $$;
 
+create or replace function public.eliminar_cuenta_propia()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'No autenticado';
+  end if;
+
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.eliminar_cuenta_propia() to authenticated;
+
 -- ─── RLS ─────────────────────────────────────────────────────────────────────
 
 alter table public.profiles enable row level security;

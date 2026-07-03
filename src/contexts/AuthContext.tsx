@@ -20,6 +20,8 @@ interface AuthContextValue {
   role: UserRole | null
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  updatePassword: (password: string) => Promise<void>
+  deleteAccount: () => Promise<void>
   configured: boolean
 }
 
@@ -76,6 +78,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error
   }, [])
 
+  const updatePassword = useCallback(async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw error
+  }, [])
+
+  const deleteAccount = useCallback(async () => {
+    const { error } = await supabase.rpc('eliminar_cuenta_propia')
+    if (error) throw error
+    await signOut()
+  }, [signOut])
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
@@ -85,9 +98,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: profile?.rol ?? null,
       signIn,
       signOut,
+      updatePassword,
+      deleteAccount,
       configured: isSupabaseConfigured,
     }),
-    [session, profile, loading, signIn, signOut],
+    [session, profile, loading, signIn, signOut, updatePassword, deleteAccount],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

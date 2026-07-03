@@ -22,6 +22,7 @@ import {
   printQuote,
   type QuoteExportData,
 } from '../lib/exportQuote'
+import { getDrivingRouteDistance } from '../lib/routing'
 import {
   calculateQuote,
   formatCurrency,
@@ -30,6 +31,7 @@ import {
 } from '../lib/quote'
 import type { Vehiculo } from '../types/database'
 import { ConfirmTripModal } from './modals/ConfirmTripModal'
+import { RouteMap } from './RouteMap'
 import { TariffTable } from './TariffTable'
 import { VehicleIcon } from './VehicleIcon'
 import {
@@ -65,7 +67,7 @@ export function CotizadorView() {
 
   const tariffs = useMemo(() => buildTariffTable(vehiculos), [vehiculos])
 
-  const handleCalculate = () => {
+  const handleCalculate = async () => {
     const pax = parseInt(passengers, 10)
     if (!origin.trim() || !destination.trim()) {
       setFormError('Completá origen y destino para calcular la cotización.')
@@ -82,11 +84,27 @@ export function CotizadorView() {
     setCalculating(true)
     setQuote(null)
 
-    setTimeout(() => {
-      setQuote(calculateQuote(origin, destination, pax, vehiculos))
+    try {
+      const route = await getDrivingRouteDistance(origin, destination)
+      const result = calculateQuote(pax, vehiculos, route.distanceKm, {
+        durationMinutes: route.durationMinutes,
+        originResolved: route.originResolved,
+        destinationResolved: route.destinationResolved,
+        originPoint: route.origin,
+        destinationPoint: route.destination,
+        routePath: route.path,
+      })
+      if (!result) {
+        setFormError('No se pudo armar la cotización con los datos ingresados.')
+        return
+      }
+      setQuote(result)
       setResultKey((k) => k + 1)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Error al calcular la ruta.')
+    } finally {
       setCalculating(false)
-    }, 400)
+    }
   }
 
   const openConfirm = (option: { vehiculo: Vehiculo; price: number }) => {
@@ -95,12 +113,13 @@ export function CotizadorView() {
   }
 
   const getExportData = (vehiculo: Vehiculo, price: number): QuoteExportData => ({
-    origen: origin,
-    destino: destination,
+    origen: quote?.originResolved ?? origin,
+    destino: quote?.destinationResolved ?? destination,
     pasajeros: parseInt(passengers, 10),
     fecha: tripDate,
     hora: tripTime,
     distancia: quote?.distance ?? 0,
+    duracionMinutos: quote?.durationMinutes,
     vehiculo,
     precioTotal: price,
   })
@@ -112,7 +131,7 @@ export function CotizadorView() {
     <div className="space-y-8 animate-fade-in">
       <PageHeader
         title="Cotizador Rápido"
-        description="Cotizá viajes, exportá presupuestos y confirmá servicios reales en la base de datos."
+        description="Cotizá viajes con distancia real por carretera (OpenStreetMap) y confirmá servicios en la base de datos."
       />
 
       {successMsg && (
@@ -208,7 +227,8 @@ export function CotizadorView() {
             <Card hover={false} className="min-h-[320px] flex items-center justify-center">
               <CardBody className="text-center">
                 <div className="mx-auto h-12 w-12 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                <p className="mt-4 font-semibold text-slate-900">Calculando ruta y precios...</p>
+                <p className="mt-4 font-semibold text-slate-900">Calculando ruta real y precios...</p>
+                <p className="mt-1 text-sm text-slate-500">Geocodificando direcciones en Argentina</p>
               </CardBody>
             </Card>
           )}
@@ -228,10 +248,48 @@ export function CotizadorView() {
           {!calculating && quote && (
             <div key={resultKey} className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-3">
-                <StatCard label="Distancia" value={`${quote.distance} km`} icon={Route} tone="info" trend="Estimación por ruta" />
+                <StatCard
+                  label="Distancia"
+                  value={`${quote.distance} km`}
+                  icon={Route}
+                  tone="info"
+                  trend={
+                    quote.durationMinutes
+                      ? `~${quote.durationMinutes} min en ruta`
+                      : 'Ruta por carretera (OSM)'
+                  }
+                />
                 <StatCard label="Opciones" value={String(quote.options.length)} icon={Sparkles} tone={quote.options.length > 0 ? 'success' : 'warning'} trend="Vehículos directos" />
                 <StatCard label="Combinaciones" value={String(quote.combinations.length)} icon={Users} tone={quote.combinations.length > 0 ? 'warning' : 'default'} trend="Mayor capacidad" />
               </div>
+
+              {(quote.originResolved || quote.destinationResolved) && (
+                <div className="card-elevated rounded-xl px-5 py-4 flex flex-wrap items-center gap-3">
+                  <Badge variant="info">{quote.originResolved ?? origin}</Badge>
+                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                  <Badge variant="info">{quote.destinationResolved ?? destination}</Badge>
+                  <span className="text-xs text-slate-500 ml-auto">
+                    {passengers} pasajeros · {quote.distance} km
+                    {quote.durationMinutes ? ` · ~${quote.durationMinutes} min` : ''}
+                  </span>
+                </div>
+              )}
+
+              {quote.routePath && quote.originPoint && quote.destinationPoint && (
+                <Card hover={false}>
+                  <CardHeader title="Ruta del viaje" subtitle="Trazado aproximado por carretera" />
+                  <CardBody className="space-y-3">
+                    <RouteMap
+                      origin={quote.originPoint}
+                      destination={quote.destinationPoint}
+                      path={quote.routePath}
+                    />
+                    <p className="text-xs text-slate-500 text-center">
+                      Mapa basado en OpenStreetMap · La ruta puede variar según desvíos y condiciones del tránsito
+                    </p>
+                  </CardBody>
+                </Card>
+              )}
 
               {quote.options.length > 0 && (
                 <div className="space-y-4">

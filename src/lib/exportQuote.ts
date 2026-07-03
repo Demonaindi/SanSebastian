@@ -9,6 +9,7 @@ export interface QuoteExportData {
   fecha?: string
   hora?: string
   distancia: number
+  duracionMinutos?: number
   vehiculo: Vehiculo
   precioTotal: number
 }
@@ -21,7 +22,8 @@ export function buildWhatsAppUrl(data: QuoteExportData): string {
     `📍 Destino: ${data.destino}`,
     `👥 Pasajeros: ${data.pasajeros}`,
     data.fecha ? `📅 Fecha: ${data.fecha}${data.hora ? ` ${data.hora}` : ''}` : '',
-    `🛣️ Distancia estimada: ${data.distancia} km`,
+    `🛣️ Distancia: ${data.distancia} km`,
+    data.duracionMinutos ? `⏱️ Tiempo estimado: ~${data.duracionMinutos} min` : '',
     `🚌 Vehículo: ${data.vehiculo.nombre} (${getCategoriaLabel(data.vehiculo.categoria)})`,
     `💰 Tarifa: ${formatRatePerKm(getRateForVehiculo(data.vehiculo))}`,
     `*Total estimado: ${formatCurrency(data.precioTotal)}*`,
@@ -76,7 +78,7 @@ function buildQuoteHtml(data: QuoteExportData): string {
     <tr><td>Destino</td><td>${data.destino}</td></tr>
     <tr><td>Pasajeros</td><td>${data.pasajeros}</td></tr>
     ${fechaLine}
-    <tr><td>Distancia estimada</td><td>${data.distancia} km</td></tr>
+    <tr><td>Distancia</td><td>${data.distancia} km${data.duracionMinutos ? ` (~${data.duracionMinutos} min)` : ''}</td></tr>
     <tr><td>Vehículo</td><td>${data.vehiculo.nombre} (${getCategoriaLabel(data.vehiculo.categoria)})</td></tr>
     <tr><td>Tarifa</td><td>${formatRatePerKm(getRateForVehiculo(data.vehiculo))}</td></tr>
   </table>
