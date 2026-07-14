@@ -21,6 +21,21 @@ const CATEGORIA_LABELS: Record<VehiculoCategoria, string> = {
   '2 pisos': 'Colectivo 2 pisos',
 }
 
+export const VEHICLE_COLOR_PRESETS = [
+  '#3b82f6',
+  '#0ea5e9',
+  '#14b8a6',
+  '#22c55e',
+  '#eab308',
+  '#f97316',
+  '#ef4444',
+  '#ec4899',
+  '#8b5cf6',
+  '#a855f7',
+  '#64748b',
+  '#0f172a',
+]
+
 export function categoriaToVehicleType(categoria: VehiculoCategoria): VehicleType {
   return CATEGORIA_TO_TYPE[categoria]
 }
@@ -65,13 +80,36 @@ export function getRateForVehiculo(vehiculo: Vehiculo): number {
 
 export type ExpiryLevel = 'ok' | 'warning' | 'danger'
 
-export function getExpiryLevel(dateStr: string | null, warningDays = 30): ExpiryLevel {
+/** Alertas legales: ≤15 días = amarillo; ≤7 días o vencido = rojo. */
+export function getExpiryLevel(dateStr: string | null): ExpiryLevel {
   if (!dateStr) return 'ok'
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const target = new Date(dateStr + 'T00:00:00')
   const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  if (diffDays < 0) return 'danger'
-  if (diffDays <= warningDays) return 'warning'
+  if (diffDays <= 7) return 'danger'
+  if (diffDays <= 15) return 'warning'
   return 'ok'
+}
+
+export function getDaysUntil(dateStr: string | null): number | null {
+  if (!dateStr) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const target = new Date(dateStr + 'T00:00:00')
+  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+export function viajeFechaFin(fechaViaje: string, fechaHasta: string | null): string {
+  return fechaHasta || fechaViaje
+}
+
+export function paymentBarColor(estadoPago: string): string {
+  if (estadoPago === 'Pagado') return '#22c55e'
+  if (estadoPago === 'Señado') return '#f97316'
+  return '#eab308'
+}
+
+export function formatPresupuestoNumero(numero: number): string {
+  return `Presupuesto N° ${String(numero).padStart(3, '0')}`
 }

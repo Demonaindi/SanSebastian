@@ -8,7 +8,11 @@ export async function fetchVehiculos(): Promise<Vehiculo[]> {
     .order('nombre')
 
   if (error) throw error
-  return data ?? []
+  return (data ?? []).map((v) => ({
+    ...v,
+    color: v.color || '#3b82f6',
+    matafuegos_vencimiento: v.matafuegos_vencimiento ?? null,
+  }))
 }
 
 export async function createVehiculo(input: NewVehiculoInput): Promise<Vehiculo> {
@@ -19,8 +23,10 @@ export async function createVehiculo(input: NewVehiculoInput): Promise<Vehiculo>
       categoria: input.categoria,
       capacidad: input.capacidad,
       tarifa_km: input.tarifa_km,
+      color: input.color || '#3b82f6',
       vtv_vencimiento: input.vtv_vencimiento ?? null,
       seguro_vencimiento: input.seguro_vencimiento ?? null,
+      matafuegos_vencimiento: input.matafuegos_vencimiento ?? null,
       kilometraje: input.kilometraje ?? 0,
       estado: 'Disponible',
     })
@@ -31,10 +37,13 @@ export async function createVehiculo(input: NewVehiculoInput): Promise<Vehiculo>
   return data
 }
 
-export async function updateVehiculoTarifa(id: string, tarifa_km: number): Promise<Vehiculo> {
+export async function updateVehiculo(
+  id: string,
+  input: Partial<NewVehiculoInput> & { estado?: VehiculoEstado },
+): Promise<Vehiculo> {
   const { data, error } = await supabase
     .from('vehiculos')
-    .update({ tarifa_km })
+    .update(input)
     .eq('id', id)
     .select('*')
     .single()
@@ -43,16 +52,12 @@ export async function updateVehiculoTarifa(id: string, tarifa_km: number): Promi
   return data
 }
 
-export async function updateVehiculoEstado(id: string, estado: VehiculoEstado): Promise<Vehiculo> {
-  const { data, error } = await supabase
-    .from('vehiculos')
-    .update({ estado })
-    .eq('id', id)
-    .select('*')
-    .single()
+export async function updateVehiculoTarifa(id: string, tarifa_km: number): Promise<Vehiculo> {
+  return updateVehiculo(id, { tarifa_km })
+}
 
-  if (error) throw error
-  return data
+export async function updateVehiculoEstado(id: string, estado: VehiculoEstado): Promise<Vehiculo> {
+  return updateVehiculo(id, { estado })
 }
 
 export async function deleteVehiculo(id: string): Promise<void> {

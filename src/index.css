@@ -70,12 +70,42 @@ body::before {
   to { opacity: 1; }
 }
 
+@keyframes sheetUp {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .animate-result {
   animation: fadeSlideIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .animate-fade-in {
   animation: fadeIn 0.3s ease forwards;
+}
+
+.animate-sheet {
+  animation: sheetUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-toast {
+  animation: toastIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .glass-panel {
@@ -99,12 +129,19 @@ body::before {
   border-color: rgba(44, 86, 151, 0.18);
 }
 
+.card-premium {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1.25rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
 .input-field {
   width: 100%;
-  border-radius: 0.625rem;
+  border-radius: 0.875rem;
   border: 1px solid #cbd5e1;
   background: #ffffff;
-  padding: 0.625rem 0.875rem;
+  padding: 0.7rem 0.875rem;
   font-size: 0.875rem;
   color: #0f172a;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -139,6 +176,43 @@ body::before {
   height: 3px;
 }
 
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.tap-press {
+  transition: transform 0.12s ease, background-color 0.15s ease;
+}
+
+.tap-press:active {
+  transform: scale(0.95);
+}
+
+.vehicle-visual-combi {
+  background: linear-gradient(145deg, #e0f2fe 0%, #bae6fd 55%, #7dd3fc 100%);
+}
+
+.vehicle-visual-traffic {
+  background: linear-gradient(145deg, #ede9fe 0%, #ddd6fe 55%, #c4b5fd 100%);
+}
+
+.vehicle-visual-bus1 {
+  background: linear-gradient(145deg, #dbeafe 0%, #bfdbfe 55%, #93c5fd 100%);
+}
+
+.vehicle-visual-bus2 {
+  background: linear-gradient(145deg, #f3e8ff 0%, #e9d5ff 55%, #d8b4fe 100%);
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -168,4 +242,14 @@ body::before {
   font-size: 11px;
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(44, 86, 151, 0.12);
+}
+
+@media (max-width: 767px) {
+  body {
+    background: #f8fafc;
+  }
+
+  body::before {
+    display: none;
+  }
 }

@@ -2,15 +2,17 @@ import { supabase } from '../lib/supabaseClient'
 import type {
   ConfirmarViajePayload,
   EstadoPago,
+  EstadoViaje,
+  ReprogramarViajePayload,
   Viaje,
   ViajeWithRelations,
 } from '../types/database'
 
 const VIAJE_RELATIONS = `
   *,
-  clientes ( nombre_razon_social ),
+  clientes ( nombre_razon_social, telefono ),
   choferes ( nombre ),
-  vehiculos ( nombre, categoria )
+  vehiculos ( nombre, categoria, color )
 `
 
 export async function fetchViajes(): Promise<ViajeWithRelations[]> {
@@ -24,21 +26,48 @@ export async function fetchViajes(): Promise<ViajeWithRelations[]> {
 }
 
 export async function confirmarViaje(payload: ConfirmarViajePayload): Promise<string> {
+  const fechaHasta = payload.fecha_hasta || payload.fecha_viaje
+
   const { data, error } = await supabase.rpc('confirmar_viaje', {
     p_origen: payload.origen,
     p_destino: payload.destino,
     p_pasajeros: payload.pasajeros,
     p_fecha_viaje: payload.fecha_viaje,
-    p_hora_viaje: payload.hora_viaje,
+    p_hora_viaje: payload.hora_viaje ?? null,
     p_distancia_km: payload.distancia_km,
     p_precio_total: payload.precio_total,
     p_cliente_id: payload.cliente_id,
-    p_chofer_id: payload.chofer_id,
+    p_chofer_id: payload.chofer_id ?? null,
     p_vehiculo_id: payload.vehiculo_id,
+    p_fecha_hasta: fechaHasta,
+    p_hora_regreso: payload.hora_regreso ?? null,
+    p_hora_llegada_aprox: payload.hora_llegada_aprox ?? null,
+    p_paradas_intermedias: payload.paradas_intermedias ?? null,
+    p_precio_base_calculado: payload.precio_base_calculado ?? null,
+    p_estado_pago: payload.estado_pago ?? 'Pendiente',
   })
 
   if (error) throw error
   return data as string
+}
+
+export async function reprogramarViaje(payload: ReprogramarViajePayload): Promise<string> {
+  const { data, error } = await supabase.rpc('reprogramar_viaje', {
+    p_viaje_id: payload.viaje_id,
+    p_fecha_viaje: payload.fecha_viaje,
+    p_fecha_hasta: payload.fecha_hasta ?? payload.fecha_viaje,
+    p_hora_viaje: payload.hora_viaje ?? null,
+    p_hora_regreso: payload.hora_regreso ?? null,
+    p_vehiculo_id: payload.vehiculo_id ?? null,
+  })
+
+  if (error) throw error
+  return data as string
+}
+
+export async function cancelarViaje(id: string): Promise<void> {
+  const { error } = await supabase.rpc('cancelar_viaje', { p_viaje_id: id })
+  if (error) throw error
 }
 
 export async function updateViajeEstadoPago(id: string, estado_pago: EstadoPago): Promise<Viaje> {
@@ -53,26 +82,23 @@ export async function updateViajeEstadoPago(id: string, estado_pago: EstadoPago)
   return data
 }
 
-export async function finalizarViaje(id: string): Promise<void> {
-  const { data: viaje, error: fetchError } = await supabase
+export async function updateViajeEstado(id: string, estado_viaje: EstadoViaje): Promise<Viaje> {
+  const { data, error } = await supabase
     .from('viajes')
-    .select('vehiculo_id, chofer_id')
+    .update({ estado_viaje })
     .eq('id', id)
+    .select('*')
     .single()
 
-  if (fetchError) throw fetchError
+  if (error) throw error
+  return data
+}
 
-  const { error: viajeError } = await supabase
+export async function finalizarViaje(id: string): Promise<void> {
+  const { error } = await supabase
     .from('viajes')
-    .update({ estado_pago: 'Pagado' })
+    .update({ estado_viaje: 'Finalizado', estado_pago: 'Pagado' })
     .eq('id', id)
 
-  if (viajeError) throw viajeError
-
-  if (viaje.vehiculo_id) {
-    await supabase.from('vehiculos').update({ estado: 'Disponible' }).eq('id', viaje.vehiculo_id)
-  }
-  if (viaje.chofer_id) {
-    await supabase.from('choferes').update({ estado: 'Disponible' }).eq('id', viaje.chofer_id)
-  }
+  if (error) throw error
 }

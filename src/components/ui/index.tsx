@@ -1,3 +1,4 @@
+import { X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
@@ -9,14 +10,14 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, action }: PageHeaderProps) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h2 className="text-xl font-bold tracking-tight text-brand sm:text-2xl">{title}</h2>
+        <h2 className="text-xl font-bold tracking-tight text-slate-900 md:text-brand sm:text-2xl">{title}</h2>
         {description && (
-          <p className="mt-1 text-sm text-slate-600 max-w-2xl">{description}</p>
+          <p className="mt-1 text-sm text-slate-500 max-w-2xl hidden sm:block">{description}</p>
         )}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   )
 }
@@ -50,7 +51,7 @@ export function CardHeader({
   trailing?: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-primary/10 px-5 py-4">
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
       <div>
         <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
         {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
@@ -73,18 +74,18 @@ interface BadgeProps {
 
 export function Badge({ children, variant = 'neutral', dot, className = '' }: BadgeProps) {
   const styles = {
-    success: 'bg-success-muted text-success border-emerald-200',
-    danger: 'bg-danger-muted text-danger border-rose-200',
-    warning: 'bg-warning-muted text-warning border-amber-200',
-    info: 'bg-primary-muted text-brand border-primary/20',
-    neutral: 'bg-surface-800 text-slate-600 border-slate-200',
+    success: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    danger: 'bg-rose-50 text-rose-700 border-rose-100',
+    warning: 'bg-amber-50 text-amber-700 border-amber-100',
+    info: 'bg-sky-50 text-sky-700 border-sky-100',
+    neutral: 'bg-slate-50 text-slate-600 border-slate-200',
   }
 
   const dotColors = {
-    success: 'bg-success',
-    danger: 'bg-danger',
-    warning: 'bg-warning',
-    info: 'bg-primary',
+    success: 'bg-emerald-500',
+    danger: 'bg-rose-500',
+    warning: 'bg-amber-500',
+    info: 'bg-sky-500',
     neutral: 'bg-slate-400',
   }
 
@@ -109,31 +110,31 @@ interface StatCardProps {
 export function StatCard({ label, value, icon: Icon, tone = 'default', trend }: StatCardProps) {
   const valueColors = {
     default: 'text-slate-900',
-    success: 'text-success',
-    warning: 'text-warning',
-    danger: 'text-danger',
+    success: 'text-emerald-700',
+    warning: 'text-amber-700',
+    danger: 'text-rose-700',
     info: 'text-brand',
   }
 
   const iconBg = {
-    default: 'bg-surface-800 text-slate-500',
-    success: 'bg-success-muted text-success',
-    warning: 'bg-warning-muted text-warning',
-    danger: 'bg-danger-muted text-danger',
+    default: 'bg-slate-100 text-slate-500',
+    success: 'bg-emerald-50 text-emerald-600',
+    warning: 'bg-amber-50 text-amber-600',
+    danger: 'bg-rose-50 text-rose-600',
     info: 'bg-primary-muted text-brand',
   }
 
   return (
-    <div className="card-elevated rounded-xl p-5">
+    <div className="card-premium p-4 md:rounded-xl md:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{label}</p>
-          <p className={`mt-2 text-2xl font-bold tracking-tight ${valueColors[tone]}`}>{value}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+          <p className={`mt-1.5 text-xl font-bold tracking-tight md:text-2xl ${valueColors[tone]}`}>{value}</p>
           {trend && <p className="mt-1 text-xs text-slate-500">{trend}</p>}
         </div>
         {Icon && (
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg[tone]}`}>
-            <Icon className="h-5 w-5" />
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${iconBg[tone]}`}>
+            <Icon className="h-5 w-5" strokeWidth={1.75} />
           </div>
         )}
       </div>
@@ -150,20 +151,20 @@ interface AlertProps {
 
 export function Alert({ title, children, variant = 'info', icon: Icon }: AlertProps) {
   const styles = {
-    danger: 'border-rose-200 bg-danger-muted text-rose-800',
-    warning: 'border-amber-200 bg-warning-muted text-amber-900',
-    info: 'border-primary/20 bg-primary-muted text-brand-dark',
+    danger: 'border-rose-100 bg-rose-50 text-rose-800',
+    warning: 'border-amber-100 bg-amber-50 text-amber-900',
+    info: 'border-sky-100 bg-sky-50 text-slate-800',
   }
 
   const iconColors = {
-    danger: 'text-danger',
-    warning: 'text-warning',
+    danger: 'text-rose-500',
+    warning: 'text-amber-500',
     info: 'text-brand',
   }
 
   return (
-    <div className={`flex gap-3 rounded-xl border px-4 py-3.5 text-sm ${styles[variant]}`}>
-      {Icon && <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${iconColors[variant]}`} />}
+    <div className={`flex gap-3 rounded-2xl border px-4 py-3.5 text-sm ${styles[variant]}`}>
+      {Icon && <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${iconColors[variant]}`} strokeWidth={1.75} />}
       <div>
         <strong className="block font-semibold">{title}</strong>
         <div className="mt-0.5 opacity-90">{children}</div>
@@ -197,14 +198,14 @@ export function Button({
     primary:
       'bg-primary text-white hover:bg-primary-hover shadow-lg shadow-primary/20 border border-primary/50',
     secondary:
-      'bg-white text-slate-700 hover:bg-surface-800 border border-slate-200',
+      'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200',
     ghost: 'text-slate-600 hover:text-brand hover:bg-primary-muted',
   }
 
   const sizes = {
     sm: 'px-3 py-1.5 text-xs gap-1.5',
     md: 'px-4 py-2.5 text-sm gap-2',
-    lg: 'px-6 py-3 text-sm gap-2',
+    lg: 'px-6 py-3.5 text-sm gap-2',
   }
 
   return (
@@ -212,7 +213,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center font-semibold rounded-xl transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
+      className={`tap-press inline-flex items-center justify-center font-semibold rounded-2xl transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
     >
       {loading && (
         <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -255,38 +256,94 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
+  /** 'half' | 'tall' controlan altura del bottom sheet en mobile */
+  sheetSize?: 'half' | 'tall'
 }
 
-export function Modal({ open, onClose, title, children, footer, wide }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, wide, sheetSize = 'tall' }: ModalProps) {
   if (!open) return null
 
+  const sheetHeight = sheetSize === 'half' ? 'max-h-[55vh]' : 'max-h-[85vh]'
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center md:items-center md:p-4">
       <button
         type="button"
-        className="absolute inset-0 bg-brand-dark/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
         onClick={onClose}
         aria-label="Cerrar"
       />
       <div
-        className={`relative z-10 flex max-h-[90vh] w-full flex-col rounded-2xl bg-white shadow-2xl ${
-          wide ? 'max-w-2xl' : 'max-w-lg'
-        }`}
+        className={`animate-sheet relative z-10 flex w-full flex-col rounded-t-3xl bg-white shadow-2xl md:animate-fade-in md:rounded-3xl ${
+          wide ? 'md:max-w-2xl' : 'md:max-w-lg'
+        } ${sheetHeight} md:max-h-[90vh]`}
       >
-        <div className="flex items-center justify-between border-b border-primary/10 px-5 py-4">
-          <h3 className="text-lg font-bold text-brand">{title}</h3>
+        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-slate-200 md:hidden" />
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h3 className="text-lg font-bold text-slate-900">{title}</h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-surface-800"
+            className="tap-press rounded-full p-2 text-slate-400 hover:bg-slate-100"
           >
-            ✕
+            <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer && (
-          <div className="flex flex-wrap gap-2 border-t border-primary/10 px-5 py-4">{footer}</div>
+          <div className="safe-bottom flex flex-wrap gap-2 border-t border-slate-100 px-5 py-4">{footer}</div>
         )}
+      </div>
+    </div>
+  )
+}
+
+export function FilterPills({
+  options,
+  value,
+  onChange,
+}: {
+  options: { id: string; label: string }[]
+  value: string
+  onChange: (id: string) => void
+}) {
+  return (
+    <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar">
+      {options.map((opt) => {
+        const active = value === opt.id
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => onChange(opt.id)}
+            className={`tap-press shrink-0 rounded-full border px-3.5 py-2 text-xs font-semibold transition-all ${
+              active
+                ? 'border-brand bg-brand text-white shadow-sm shadow-brand/20'
+                : 'border-slate-200 bg-white text-slate-600'
+            }`}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded-2xl bg-slate-200/80 ${className}`} />
+}
+
+export function SkeletonCard() {
+  return (
+    <div className="card-premium overflow-hidden">
+      <div className="flex gap-3 p-3">
+        <Skeleton className="h-24 w-24 shrink-0 rounded-xl" />
+        <div className="flex flex-1 flex-col gap-2 py-1">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+          <Skeleton className="mt-auto h-6 w-20" />
+        </div>
       </div>
     </div>
   )
@@ -294,17 +351,19 @@ export function Modal({ open, onClose, title, children, footer, wide }: ModalPro
 
 export function LoadingState({ message = 'Cargando...' }: { message?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="h-10 w-10 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-      <p className="mt-4 text-sm text-slate-600">{message}</p>
+    <div className="space-y-3 py-2 animate-fade-in">
+      <SkeletonCard />
+      <SkeletonCard />
+      <SkeletonCard />
+      <p className="pt-2 text-center text-xs text-slate-400">{message}</p>
     </div>
   )
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="rounded-xl border border-rose-200 bg-danger-muted px-4 py-6 text-center">
-      <p className="text-sm text-danger">{message}</p>
+    <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-6 text-center">
+      <p className="text-sm text-rose-700">{message}</p>
       {onRetry && (
         <button
           type="button"
@@ -317,4 +376,3 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
     </div>
   )
 }
-

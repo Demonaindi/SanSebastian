@@ -4,6 +4,7 @@ export type ChoferEstado = 'Disponible' | 'En viaje' | 'Franco' | 'Licencia'
 export type VehiculoEstado = 'Disponible' | 'En viaje'
 export type VehiculoCategoria = 'Combi' | 'Traffic' | '1 piso' | '2 pisos'
 export type EstadoPago = 'Pendiente' | 'Señado' | 'Pagado'
+export type EstadoViaje = 'Reservado' | 'Confirmado' | 'Cancelado' | 'Reprogramado' | 'Finalizado'
 export type CajaTipo = 'Ingreso' | 'Egreso'
 
 export type VehicleType = 'combi' | 'traffic' | 'bus1' | 'bus2'
@@ -20,7 +21,7 @@ export interface Cliente {
   id: string
   nombre_razon_social: string
   cuil_cuit_dni: string | null
-  telefono: string | null
+  telefono: string
   email: string | null
   created_at: string
 }
@@ -40,8 +41,10 @@ export interface Vehiculo {
   capacidad: number
   tarifa_km: number
   estado: VehiculoEstado
+  color: string
   vtv_vencimiento: string | null
   seguro_vencimiento: string | null
+  matafuegos_vencimiento: string | null
   kilometraje: number
   created_at: string
 }
@@ -51,11 +54,17 @@ export interface Viaje {
   origen: string
   destino: string
   pasajeros: number
-  fecha_viaje: string | null
+  fecha_viaje: string
+  fecha_hasta: string | null
   hora_viaje: string | null
+  hora_regreso: string | null
+  hora_llegada_aprox: string | null
   distancia_km: number
+  precio_base_calculado: number | null
   precio_total: number
+  paradas_intermedias: string | null
   estado_pago: EstadoPago
+  estado_viaje: EstadoViaje
   cliente_id: string | null
   chofer_id: string | null
   vehiculo_id: string | null
@@ -63,9 +72,28 @@ export interface Viaje {
 }
 
 export interface ViajeWithRelations extends Viaje {
-  clientes?: Pick<Cliente, 'nombre_razon_social'> | null
+  clientes?: Pick<Cliente, 'nombre_razon_social' | 'telefono'> | null
   choferes?: Pick<Chofer, 'nombre'> | null
-  vehiculos?: Pick<Vehiculo, 'nombre' | 'categoria'> | null
+  vehiculos?: Pick<Vehiculo, 'nombre' | 'categoria' | 'color'> | null
+}
+
+export interface Presupuesto {
+  id: string
+  numero: number
+  origen: string
+  destino: string
+  pasajeros: number
+  fecha_viaje: string | null
+  hora_viaje: string | null
+  distancia_km: number
+  vehiculo_nombre: string | null
+  vehiculo_categoria: string | null
+  precio_total: number
+  dias_validez: number
+  condiciones_pago: string
+  paradas_intermedias: string | null
+  created_by: string | null
+  created_at: string
 }
 
 export interface CajaMovimiento {
@@ -81,13 +109,28 @@ export interface ConfirmarViajePayload {
   origen: string
   destino: string
   pasajeros: number
-  fecha_viaje: string | null
-  hora_viaje: string | null
+  fecha_viaje: string
+  fecha_hasta?: string | null
+  hora_viaje?: string | null
+  hora_regreso?: string | null
+  hora_llegada_aprox?: string | null
   distancia_km: number
   precio_total: number
+  precio_base_calculado?: number | null
+  paradas_intermedias?: string | null
+  estado_pago?: EstadoPago
   cliente_id: string
-  chofer_id: string
+  chofer_id?: string | null
   vehiculo_id: string
+}
+
+export interface ReprogramarViajePayload {
+  viaje_id: string
+  fecha_viaje: string
+  fecha_hasta?: string | null
+  hora_viaje?: string | null
+  hora_regreso?: string | null
+  vehiculo_id?: string | null
 }
 
 export interface TariffRow {
@@ -99,8 +142,8 @@ export interface TariffRow {
 
 export interface NewClienteInput {
   nombre_razon_social: string
+  telefono: string
   cuil_cuit_dni?: string
-  telefono?: string
   email?: string
 }
 
@@ -115,8 +158,10 @@ export interface NewVehiculoInput {
   categoria: VehiculoCategoria
   capacidad: number
   tarifa_km: number
+  color?: string
   vtv_vencimiento?: string | null
   seguro_vencimiento?: string | null
+  matafuegos_vencimiento?: string | null
   kilometraje?: number
 }
 
@@ -126,3 +171,8 @@ export interface NewCajaInput {
   monto: number
   viaje_id?: string | null
 }
+
+export const CONDICIONES_PAGO_DEFAULT =
+  'Seña del 50% para confirmar. Saldo restante 48 hs antes del viaje. Cancelaciones con menos de 72 hs: seña no reembolsable.'
+
+export const DIAS_VALIDEZ_PRESUPUESTO_DEFAULT = 7

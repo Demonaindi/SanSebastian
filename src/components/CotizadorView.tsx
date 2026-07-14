@@ -14,8 +14,15 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
-import { buildTariffTable, categoriaToVehicleType, getCategoriaLabel, getRateForVehiculo } from '../lib/mappers'
+import { useToast } from '../contexts/ToastContext'
+import {
+  buildTariffTable,
+  categoriaToVehicleType,
+  getCategoriaLabel,
+  getRateForVehiculo,
+} from '../lib/mappers'
 import {
   buildWhatsAppUrl,
   exportQuotePdf,
@@ -29,9 +36,9 @@ import {
   formatRatePerKm,
   type QuoteResult,
 } from '../lib/quote'
+import { generarPresupuesto } from '../services/presupuestos'
 import type { Vehiculo } from '../types/database'
 import { ConfirmTripModal } from './modals/ConfirmTripModal'
-import { RouteMap } from './RouteMap'
 import { TariffTable } from './TariffTable'
 import { VehicleIcon } from './VehicleIcon'
 import {
@@ -45,25 +52,32 @@ import {
   FormField,
   LoadingState,
   PageHeader,
+  SkeletonCard,
   StatCard,
 } from './ui'
 
 export function CotizadorView() {
+  const { isAdmin } = useAuth()
+  const { toast } = useToast()
   const { vehiculos, loading, error, refreshVehiculos } = useData()
   const [origin, setOrigin] = useState('')
   const [destination, setDestination] = useState('')
+  const [stops, setStops] = useState('')
   const [passengers, setPassengers] = useState('')
   const [tripDate, setTripDate] = useState('')
+  const [tripDateUntil, setTripDateUntil] = useState('')
   const [tripTime, setTripTime] = useState('')
+  const [arrivalTime, setArrivalTime] = useState('')
+  const [returnTime, setReturnTime] = useState('')
   const [quote, setQuote] = useState<QuoteResult | null>(null)
+  const [editedPrices, setEditedPrices] = useState<Record<string, number>>({})
   const [formError, setFormError] = useState('')
   const [resultKey, setResultKey] = useState(0)
   const [calculating, setCalculating] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [selectedOption, setSelectedOption] = useState<{ vehiculo: Vehiculo; price: number } | null>(
-    null,
-  )
+  const [selectedOption, setSelectedOption] = useState<{ vehiculo: Vehiculo; price: number; base: number } | null>(null)
   const [successMsg, setSuccessMsg] = useState('')
+  const [exportingId, setExportingId] = useState<string | null>(null)
 
   const tariffs = useMemo(() => buildTariffTable(vehiculos), [vehiculos])
 
@@ -83,6 +97,7 @@ export function CotizadorView() {
     setSuccessMsg('')
     setCalculating(true)
     setQuote(null)
+    setEditedPrices({})
 
     try {
       const route = await getDrivingRouteDistance(origin, destination)
@@ -99,7 +114,11 @@ export function CotizadorView() {
         return
       }
       setQuote(result)
+      const prices: Record<string, number> = {}
+      for (const opt of result.options) prices[opt.vehiculo.id] = opt.price
+      setEditedPrices(prices)
       setResultKey((k) => k + 1)
+      if (!tripDateUntil && tripDate) setTripDateUntil(tripDate)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Error al calcular la ruta.')
     } finally {
@@ -107,22 +126,66 @@ export function CotizadorView() {
     }
   }
 
+  const getPrice = (vehiculoId: string, base: number) => editedPrices[vehiculoId] ?? base
+
   const openConfirm = (option: { vehiculo: Vehiculo; price: number }) => {
-    setSelectedOption(option)
+    if (!isAdmin) return
+    setSelectedOption({
+      vehiculo: option.vehiculo,
+      price: getPrice(option.vehiculo.id, option.price),
+      base: option.price,
+    })
     setConfirmOpen(true)
   }
 
-  const getExportData = (vehiculo: Vehiculo, price: number): QuoteExportData => ({
-    origen: quote?.originResolved ?? origin,
-    destino: quote?.destinationResolved ?? destination,
-    pasajeros: parseInt(passengers, 10),
-    fecha: tripDate,
-    hora: tripTime,
-    distancia: quote?.distance ?? 0,
-    duracionMinutos: quote?.durationMinutes,
-    vehiculo,
-    precioTotal: price,
-  })
+  const buildExportPayload = async (vehiculo: Vehiculo, basePrice: number): Promise<QuoteExportData> => {
+    const precioTotal = getPrice(vehiculo.id, basePrice)
+    const presupuesto = await generarPresupuesto({
+      origen: quote?.originResolved ?? origin,
+      destino: quote?.destinationResolved ?? destination,
+      pasajeros: parseInt(passengers, 10),
+      fecha_viaje: tripDate || null,
+      hora_viaje: tripTime || null,
+      distancia_km: quote?.distance ?? 0,
+      vehiculo_nombre: vehiculo.nombre,
+      vehiculo_categoria: vehiculo.categoria,
+      precio_total: precioTotal,
+      paradas_intermedias: stops.trim() || null,
+    })
+
+    return {
+      origen: quote?.originResolved ?? origin,
+      destino: quote?.destinationResolved ?? destination,
+      pasajeros: parseInt(passengers, 10),
+      fecha: tripDate,
+      hora: tripTime,
+      distancia: quote?.distance ?? 0,
+      duracionMinutos: quote?.durationMinutes,
+      vehiculo,
+      precioTotal,
+      precioBaseCalculado: basePrice,
+      paradasIntermedias: stops.trim() || undefined,
+      presupuesto,
+    }
+  }
+
+  const handleExport = async (
+    vehiculo: Vehiculo,
+    basePrice: number,
+    mode: 'pdf' | 'print' | 'wa',
+  ) => {
+    setExportingId(vehiculo.id)
+    try {
+      const data = await buildExportPayload(vehiculo, basePrice)
+      if (mode === 'pdf') exportQuotePdf(data)
+      else if (mode === 'print') printQuote(data)
+      else window.open(buildWhatsAppUrl(data), '_blank')
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'No se pudo generar el presupuesto')
+    } finally {
+      setExportingId(null)
+    }
+  }
 
   if (loading && vehiculos.length === 0) return <LoadingState message="Cargando flota..." />
   if (error) return <ErrorState message={error} onRetry={refreshVehiculos} />
@@ -131,11 +194,11 @@ export function CotizadorView() {
     <div className="space-y-8 animate-fade-in">
       <PageHeader
         title="Cotizador Rápido"
-        description="Cotizá viajes con distancia real por carretera (OpenStreetMap) y confirmá servicios en la base de datos."
+        description="El precio se calcula por ruta lineal Origen → Destino. Las paradas intermedias se cargan como texto del itinerario y no suman kilómetros automáticamente."
       />
 
       {successMsg && (
-        <Alert title="Viaje confirmado" variant="info" icon={CheckCircle2}>
+        <Alert title="Reserva registrada" variant="info" icon={CheckCircle2}>
           {successMsg}
         </Alert>
       )}
@@ -145,7 +208,7 @@ export function CotizadorView() {
       <div className="grid gap-6 xl:grid-cols-5">
         <div className="xl:col-span-2">
           <Card hover={false}>
-            <CardHeader title="Datos del viaje" subtitle="Origen, destino y pasajeros son obligatorios" />
+            <CardHeader title="Datos del viaje" subtitle="Origen, destino y pasajeros obligatorios" />
             <CardBody className="space-y-5">
               <FormField label="Punto de partida">
                 <div className="relative">
@@ -179,6 +242,15 @@ export function CotizadorView() {
                 </div>
               </FormField>
 
+              <FormField label="Paradas intermedias (itinerario en texto)">
+                <textarea
+                  value={stops}
+                  onChange={(e) => setStops(e.target.value)}
+                  className="input-field min-h-[80px]"
+                  placeholder="Ej: Parada club / Predio hockey / Hotel. No suman km al cálculo."
+                />
+              </FormField>
+
               <FormField label="Cantidad de pasajeros">
                 <div className="relative">
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
@@ -194,16 +266,53 @@ export function CotizadorView() {
               </FormField>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Fecha">
+                <FormField label="Fecha desde">
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                    <input type="date" value={tripDate} onChange={(e) => setTripDate(e.target.value)} className="input-field input-field-icon" />
+                    <input
+                      type="date"
+                      value={tripDate}
+                      onChange={(e) => {
+                        setTripDate(e.target.value)
+                        if (!tripDateUntil || tripDateUntil < e.target.value) {
+                          setTripDateUntil(e.target.value)
+                        }
+                      }}
+                      className="input-field input-field-icon"
+                    />
                   </div>
                 </FormField>
-                <FormField label="Hora">
+                <FormField label="Fecha hasta">
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                    <input
+                      type="date"
+                      value={tripDateUntil || tripDate}
+                      min={tripDate || undefined}
+                      onChange={(e) => setTripDateUntil(e.target.value)}
+                      className="input-field input-field-icon"
+                    />
+                  </div>
+                </FormField>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <FormField label="Hora salida">
                   <div className="relative">
                     <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                     <input type="time" value={tripTime} onChange={(e) => setTripTime(e.target.value)} className="input-field input-field-icon" />
+                  </div>
+                </FormField>
+                <FormField label="Llegada (aprox.)">
+                  <div className="relative">
+                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                    <input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className="input-field input-field-icon" />
+                  </div>
+                </FormField>
+                <FormField label="Hora regreso">
+                  <div className="relative">
+                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                    <input type="time" value={returnTime} onChange={(e) => setReturnTime(e.target.value)} className="input-field input-field-icon" />
                   </div>
                 </FormField>
               </div>
@@ -224,13 +333,12 @@ export function CotizadorView() {
 
         <div className="xl:col-span-3">
           {calculating && (
-            <Card hover={false} className="min-h-[320px] flex items-center justify-center">
-              <CardBody className="text-center">
-                <div className="mx-auto h-12 w-12 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                <p className="mt-4 font-semibold text-slate-900">Calculando ruta real y precios...</p>
-                <p className="mt-1 text-sm text-slate-500">Geocodificando direcciones en Argentina</p>
-              </CardBody>
-            </Card>
+            <div className="space-y-3">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
+              <p className="text-center text-xs text-slate-400">Calculando ruta origen → destino...</p>
+            </div>
           )}
 
           {!calculating && !quote && (
@@ -239,7 +347,7 @@ export function CotizadorView() {
                 <Route className="h-12 w-12 text-brand mb-4" />
                 <h3 className="text-lg font-semibold text-slate-900">Listo para cotizar</h3>
                 <p className="mt-2 max-w-sm text-sm text-slate-500">
-                  Completá el formulario para ver opciones, exportar presupuesto o confirmar un viaje real.
+                  Completá el formulario. El administrador puede editar el total antes de emitir el presupuesto.
                 </p>
               </CardBody>
             </Card>
@@ -249,18 +357,14 @@ export function CotizadorView() {
             <div key={resultKey} className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-3">
                 <StatCard
-                  label="Distancia"
+                  label="Distancia lineal"
                   value={`${quote.distance} km`}
                   icon={Route}
                   tone="info"
-                  trend={
-                    quote.durationMinutes
-                      ? `~${quote.durationMinutes} min en ruta`
-                      : 'Ruta por carretera (OSM)'
-                  }
+                  trend={quote.durationMinutes ? `~${quote.durationMinutes} min` : 'Origen → Destino'}
                 />
-                <StatCard label="Opciones" value={String(quote.options.length)} icon={Sparkles} tone={quote.options.length > 0 ? 'success' : 'warning'} trend="Vehículos directos" />
-                <StatCard label="Combinaciones" value={String(quote.combinations.length)} icon={Users} tone={quote.combinations.length > 0 ? 'warning' : 'default'} trend="Mayor capacidad" />
+                <StatCard label="Opciones" value={String(quote.options.length)} icon={Sparkles} tone={quote.options.length > 0 ? 'success' : 'warning'} />
+                <StatCard label="Combinaciones" value={String(quote.combinations.length)} icon={Users} tone={quote.combinations.length > 0 ? 'warning' : 'default'} />
               </div>
 
               {(quote.originResolved || quote.destinationResolved) && (
@@ -269,31 +373,22 @@ export function CotizadorView() {
                   <ArrowRight className="h-4 w-4 text-slate-400" />
                   <Badge variant="info">{quote.destinationResolved ?? destination}</Badge>
                   <span className="text-xs text-slate-500 ml-auto">
-                    {passengers} pasajeros · {quote.distance} km
-                    {quote.durationMinutes ? ` · ~${quote.durationMinutes} min` : ''}
+                    {passengers} pax · {quote.distance} km
                   </span>
                 </div>
               )}
 
-              {quote.routePath && quote.originPoint && quote.destinationPoint && (
-                <Card hover={false}>
-                  <CardHeader title="Ruta del viaje" subtitle="Trazado aproximado por carretera" />
-                  <CardBody className="space-y-3">
-                    <RouteMap
-                      origin={quote.originPoint}
-                      destination={quote.destinationPoint}
-                      path={quote.routePath}
-                    />
-                    <p className="text-xs text-slate-500 text-center">
-                      Mapa basado en OpenStreetMap · La ruta puede variar según desvíos y condiciones del tránsito
-                    </p>
-                  </CardBody>
-                </Card>
+              {stops.trim() && (
+                <Alert title="Itinerario de paradas (sin km extra)" variant="info">
+                  {stops}
+                </Alert>
               )}
 
               {quote.options.length > 0 && (
                 <div className="space-y-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">Vehículos recomendados</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Vehículos recomendados
+                  </h3>
                   {quote.options.map((opt, index) => (
                     <QuoteOptionCard
                       key={opt.vehiculo.id}
@@ -301,10 +396,17 @@ export function CotizadorView() {
                       distance={quote.distance}
                       index={index}
                       featured={index === 0}
+                      editedPrice={getPrice(opt.vehiculo.id, opt.price)}
+                      canEditPrice={isAdmin}
+                      exporting={exportingId === opt.vehiculo.id}
+                      onPriceChange={(value) =>
+                        setEditedPrices((prev) => ({ ...prev, [opt.vehiculo.id]: value }))
+                      }
                       onConfirm={() => openConfirm(opt)}
-                      onExportPdf={() => exportQuotePdf(getExportData(opt.vehiculo, opt.price))}
-                      onPrint={() => printQuote(getExportData(opt.vehiculo, opt.price))}
-                      onWhatsApp={() => window.open(buildWhatsAppUrl(getExportData(opt.vehiculo, opt.price)), '_blank')}
+                      canConfirm={isAdmin}
+                      onExportPdf={() => handleExport(opt.vehiculo, opt.price, 'pdf')}
+                      onPrint={() => handleExport(opt.vehiculo, opt.price, 'print')}
+                      onWhatsApp={() => handleExport(opt.vehiculo, opt.price, 'wa')}
                     />
                   ))}
                 </div>
@@ -312,13 +414,15 @@ export function CotizadorView() {
 
               {quote.options.length === 0 && quote.combinations.length > 0 && (
                 <Alert title="Se requiere combinación" variant="warning" icon={AlertTriangle}>
-                  Ningún vehículo individual cubre {passengers} pasajeros. Confirmá cada unidad por separado.
+                  Ningún vehículo individual cubre {passengers} pasajeros.
                 </Alert>
               )}
 
               {quote.combinations.length > 0 && (
                 <div className="space-y-3">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">Combinaciones sugeridas</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Combinaciones sugeridas
+                  </h3>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {quote.combinations.map((combo, index) => (
                       <article key={`${combo.label}-${index}`} className="card-elevated rounded-xl p-5 space-y-3">
@@ -327,17 +431,13 @@ export function CotizadorView() {
                           <p className="text-xl font-bold text-warning">{formatCurrency(combo.price)}</p>
                         </div>
                         <p className="font-semibold text-slate-900">{combo.label}</p>
-                        <p className="text-xs text-slate-500">{combo.totalCapacity} pax · {quote.distance} km</p>
+                        <p className="text-xs text-slate-500">
+                          {combo.totalCapacity} pax · {quote.distance} km
+                        </p>
                       </article>
                     ))}
                   </div>
                 </div>
-              )}
-
-              {quote.options.length === 0 && quote.combinations.length === 0 && (
-                <Alert title="Sin disponibilidad" variant="danger">
-                  No hay vehículos disponibles. Revisá la flota o ajustá los pasajeros.
-                </Alert>
               )}
             </div>
           )}
@@ -349,16 +449,26 @@ export function CotizadorView() {
           open={confirmOpen}
           onClose={() => setConfirmOpen(false)}
           onSuccess={() => {
-            setSuccessMsg(`Viaje registrado: ${origin} → ${destination} con ${selectedOption.vehiculo.nombre}.`)
+            setSuccessMsg(`Reserva registrada: ${origin} → ${destination} con ${selectedOption.vehiculo.nombre}.`)
+            toast({
+              title: 'Viaje asignado con éxito',
+              message: `${selectedOption.vehiculo.nombre} · ${origin} → ${destination}`,
+              tone: 'success',
+            })
             setConfirmOpen(false)
           }}
           origen={origin}
           destino={destination}
           pasajeros={parseInt(passengers, 10)}
           fechaViaje={tripDate}
+          fechaHasta={tripDateUntil || tripDate}
           horaViaje={tripTime}
+          horaRegreso={returnTime}
+          horaLlegadaAprox={arrivalTime}
           distancia={quote.distance}
           precioTotal={selectedOption.price}
+          precioBaseCalculado={selectedOption.base}
+          paradasIntermedias={stops}
           vehiculo={selectedOption.vehiculo}
         />
       )}
@@ -371,7 +481,12 @@ function QuoteOptionCard({
   distance,
   index,
   featured,
+  editedPrice,
+  canEditPrice,
+  exporting,
+  onPriceChange,
   onConfirm,
+  canConfirm,
   onExportPdf,
   onPrint,
   onWhatsApp,
@@ -380,7 +495,12 @@ function QuoteOptionCard({
   distance: number
   index: number
   featured?: boolean
+  editedPrice: number
+  canEditPrice: boolean
+  exporting: boolean
+  onPriceChange: (value: number) => void
   onConfirm: () => void
+  canConfirm: boolean
   onExportPdf: () => void
   onPrint: () => void
   onWhatsApp: () => void
@@ -400,7 +520,7 @@ function QuoteOptionCard({
             <p className="text-xs text-slate-500">{getCategoriaLabel(vehiculo.categoria)}</p>
             {featured && (
               <Badge variant="info" className="mt-2">
-                Mejor precio
+                Mejor precio base
               </Badge>
             )}
           </div>
@@ -414,32 +534,50 @@ function QuoteOptionCard({
             </div>
             <div>
               <p className="text-[10px] font-bold uppercase text-slate-500">Tarifa/km</p>
-              <p className="text-sm font-semibold text-slate-700">{formatRatePerKm(getRateForVehiculo(vehiculo))}</p>
+              <p className="text-sm font-semibold text-slate-700">
+                {formatRatePerKm(getRateForVehiculo(vehiculo))}
+              </p>
             </div>
             <div className="col-span-2 sm:col-span-1">
-              <p className="text-[10px] font-bold uppercase text-slate-500">Cálculo</p>
-              <p className="text-xs text-slate-500">{distance} km × {formatRatePerKm(getRateForVehiculo(vehiculo))}</p>
+              <p className="text-[10px] font-bold uppercase text-slate-500">Cálculo base</p>
+              <p className="text-xs text-slate-500">
+                {distance} km × {formatRatePerKm(getRateForVehiculo(vehiculo))} = {formatCurrency(price)}
+              </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-primary/10 pt-4">
-            <div>
-              <p className="text-2xl font-bold text-brand">{formatCurrency(price)}</p>
-              <p className="text-xs text-slate-500">Total estimado</p>
+          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-primary/10 pt-4">
+            <div className="min-w-[180px]">
+              <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">
+                Precio final {canEditPrice ? '(editable)' : '(solo admin)'}
+              </p>
+              {canEditPrice ? (
+                <input
+                  type="number"
+                  min={0}
+                  value={editedPrice}
+                  onChange={(e) => onPriceChange(parseFloat(e.target.value) || 0)}
+                  className="input-field font-bold text-lg text-brand"
+                />
+              ) : (
+                <p className="text-2xl font-bold text-brand">{formatCurrency(editedPrice)}</p>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" onClick={onExportPdf}>
+              <Button size="sm" variant="secondary" onClick={onExportPdf} loading={exporting}>
                 <FileDown className="h-4 w-4" /> PDF
               </Button>
-              <Button size="sm" variant="secondary" onClick={onPrint}>
+              <Button size="sm" variant="secondary" onClick={onPrint} disabled={exporting}>
                 <Printer className="h-4 w-4" /> Imprimir
               </Button>
-              <Button size="sm" variant="secondary" onClick={onWhatsApp}>
+              <Button size="sm" variant="secondary" onClick={onWhatsApp} disabled={exporting}>
                 <MessageCircle className="h-4 w-4" /> WhatsApp
               </Button>
-              <Button size="sm" onClick={onConfirm}>
-                <CheckCircle2 className="h-4 w-4" /> Confirmar viaje
-              </Button>
+              {canConfirm && (
+                <Button size="sm" onClick={onConfirm}>
+                  <CheckCircle2 className="h-4 w-4" /> Reservar
+                </Button>
+              )}
             </div>
           </div>
         </div>

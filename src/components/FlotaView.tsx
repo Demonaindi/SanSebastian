@@ -1,25 +1,27 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Bus, Filter, Plus, Search, Shield, Truck } from 'lucide-react'
+import { AlertTriangle, Bus, Flame, Plus, Search, Shield, Truck } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
+import { useToast } from '../contexts/ToastContext'
 import {
   buildTariffTable,
   categoriaToVehicleType,
   getCategoriaLabel,
   getExpiryLevel,
   getRateForVehiculo,
+  VEHICLE_COLOR_PRESETS,
 } from '../lib/mappers'
 import { formatRatePerKm } from '../lib/quote'
-import { createVehiculo } from '../services/vehiculos'
-import type { VehiculoCategoria } from '../types/database'
+import { createVehiculo, updateVehiculo } from '../services/vehiculos'
+import type { Vehiculo, VehiculoCategoria } from '../types/database'
 import { TariffTable } from './TariffTable'
 import { VehicleIcon } from './VehicleIcon'
 import {
   Badge,
   Button,
   Card,
-  CardBody,
   ErrorState,
+  FilterPills,
   FormField,
   LoadingState,
   Modal,
@@ -37,19 +39,34 @@ const filters: { id: FilterType; label: string }[] = [
   { id: '2 pisos', label: '2 pisos' },
 ]
 
+const emptyForm = {
+  nombre: '',
+  categoria: 'Combi' as VehiculoCategoria,
+  capacidad: '',
+  tarifa_km: '',
+  color: '#3b82f6',
+  vtv_vencimiento: '',
+  seguro_vencimiento: '',
+  matafuegos_vencimiento: '',
+}
+
+const visualByType: Record<string, string> = {
+  combi: 'vehicle-visual-combi',
+  traffic: 'vehicle-visual-traffic',
+  bus1: 'vehicle-visual-bus1',
+  bus2: 'vehicle-visual-bus2',
+}
+
 export function FlotaView() {
   const { isAdmin } = useAuth()
+  const { toast } = useToast()
   const { vehiculos, loading, error, refreshVehiculos } = useData()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterType>('all')
   const [showAdd, setShowAdd] = useState(false)
+  const [editing, setEditing] = useState<Vehiculo | null>(null)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({
-    nombre: '',
-    categoria: 'Combi' as VehiculoCategoria,
-    capacidad: '',
-    tarifa_km: '',
-  })
+  const [form, setForm] = useState(emptyForm)
 
   const tariffs = useMemo(() => buildTariffTable(vehiculos), [vehiculos])
   const disponibles = vehiculos.filter((v) => v.estado === 'Disponible').length
@@ -57,19 +74,18 @@ export function FlotaView() {
   const utilization = vehiculos.length ? Math.round((enViaje / vehiculos.length) * 100) : 0
 
   const alertas = useMemo(() => {
-    let vtvCritico = 0
-    let seguroCritico = 0
-    let vtvProximo = 0
-    let seguroProximo = 0
+    let critico = 0
+    let alerta = 0
     for (const v of vehiculos) {
-      const vtv = getExpiryLevel(v.vtv_vencimiento)
-      const seg = getExpiryLevel(v.seguro_vencimiento)
-      if (vtv === 'danger') vtvCritico++
-      else if (vtv === 'warning') vtvProximo++
-      if (seg === 'danger') seguroCritico++
-      else if (seg === 'warning') seguroProximo++
+      const levels = [
+        getExpiryLevel(v.vtv_vencimiento),
+        getExpiryLevel(v.seguro_vencimiento),
+        getExpiryLevel(v.matafuegos_vencimiento),
+      ]
+      if (levels.includes('danger')) critico++
+      else if (levels.includes('warning')) alerta++
     }
-    return { vtvCritico, seguroCritico, vtvProximo, seguroProximo }
+    return { critico, alerta }
   }, [vehiculos])
 
   const filtered = useMemo(() => {
@@ -83,18 +99,54 @@ export function FlotaView() {
     })
   }, [vehiculos, search, filter])
 
-  const handleAdd = async () => {
+  const openCreate = () => {
+    setEditing(null)
+    setForm(emptyForm)
+    setShowAdd(true)
+  }
+
+  const openEdit = (v: Vehiculo) => {
+    if (!isAdmin) return
+    setEditing(v)
+    setForm({
+      nombre: v.nombre,
+      categoria: v.categoria,
+      capacidad: String(v.capacidad),
+      tarifa_km: String(v.tarifa_km),
+      color: v.color || '#3b82f6',
+      vtv_vencimiento: v.vtv_vencimiento ?? '',
+      seguro_vencimiento: v.seguro_vencimiento ?? '',
+      matafuegos_vencimiento: v.matafuegos_vencimiento ?? '',
+    })
+    setShowAdd(true)
+  }
+
+  const handleSave = async () => {
     setSaving(true)
     try {
-      await createVehiculo({
+      const payload = {
         nombre: form.nombre,
         categoria: form.categoria,
         capacidad: parseInt(form.capacidad, 10),
         tarifa_km: parseFloat(form.tarifa_km),
-      })
+        color: form.color,
+        vtv_vencimiento: form.vtv_vencimiento || null,
+        seguro_vencimiento: form.seguro_vencimiento || null,
+        matafuegos_vencimiento: form.matafuegos_vencimiento || null,
+      }
+      if (editing) await updateVehiculo(editing.id, payload)
+      else await createVehiculo(payload)
       setShowAdd(false)
-      setForm({ nombre: '', categoria: 'Combi', capacidad: '', tarifa_km: '' })
+      setEditing(null)
+      setForm(emptyForm)
       await refreshVehiculos()
+      toast({ title: editing ? 'Unidad actualizada' : 'Unidad creada', tone: 'success' })
+    } catch (err) {
+      toast({
+        title: 'No se pudo guardar',
+        message: err instanceof Error ? err.message : undefined,
+        tone: 'danger',
+      })
     } finally {
       setSaving(false)
     }
@@ -104,114 +156,130 @@ export function FlotaView() {
   if (error) return <ErrorState message={error} onRetry={refreshVehiculos} />
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-6 animate-fade-in md:space-y-8">
       <PageHeader
         title="Gestión de Flota"
-        description="Monitoreá el estado de cada unidad, capacidad, tarifas por kilómetro y alertas de vencimiento."
+        description="Alertas legales: ≤15 días amarillo · ≤7 días o vencido rojo."
         action={
           isAdmin ? (
-            <Button onClick={() => setShowAdd(true)}>
-              <Plus className="h-4 w-4" />
-              Agregar vehículo
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4" strokeWidth={1.75} />
+              Agregar
             </Button>
           ) : undefined
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Total flota" value={String(vehiculos.length)} icon={Bus} />
-        <StatCard
-          label="Disponibles"
-          value={String(disponibles)}
-          icon={Truck}
-          tone="success"
-          trend={vehiculos.length ? `${Math.round((disponibles / vehiculos.length) * 100)}% operativos` : undefined}
-        />
-        <StatCard label="En viaje" value={String(enViaje)} icon={Bus} tone="danger" trend="Unidades asignadas" />
-        <StatCard label="Utilización" value={`${utilization}%`} tone="info" trend="Flota en servicio" />
+        <StatCard label="Disponibles" value={String(disponibles)} icon={Truck} tone="success" />
+        <StatCard label="Alertas" value={String(alertas.alerta)} tone="warning" icon={AlertTriangle} />
+        <StatCard label="Críticos" value={String(alertas.critico)} tone="danger" icon={Shield} trend={`${utilization}% en servicio`} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <AlertCard
-          title="VTV vencida"
-          count={alertas.vtvCritico}
-          level="danger"
-          icon={AlertTriangle}
-        />
-        <AlertCard title="VTV próxima" count={alertas.vtvProximo} level="warning" icon={AlertTriangle} />
-        <AlertCard title="Seguro vencido" count={alertas.seguroCritico} level="danger" icon={Shield} />
-        <AlertCard title="Seguro próximo" count={alertas.seguroProximo} level="warning" icon={Shield} />
+      <div className="hidden md:block">
+        <TariffTable tariffs={tariffs} />
       </div>
 
-      <TariffTable tariffs={tariffs} />
-
-      <Card hover={false}>
-        <div className="flex flex-col gap-4 border-b border-primary/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nombre o categoría..."
-              className="input-field input-field-icon w-full"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Filter className="h-4 w-4 text-slate-500 hidden sm:block" />
-            {filters.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setFilter(f.id)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  filter === f.id
-                    ? 'bg-primary text-white'
-                    : 'bg-surface-800 text-slate-600 hover:text-brand hover:bg-primary-muted'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" strokeWidth={1.75} />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar unidad..."
+            className="input-field input-field-icon"
+          />
         </div>
+        <FilterPills
+          options={filters.map((f) => ({ id: f.id, label: f.label }))}
+          value={filter}
+          onChange={(id) => setFilter(id as FilterType)}
+        />
+      </div>
 
+      {/* Mobile premium cards */}
+      <div className="space-y-3 md:hidden">
+        {filtered.map((v) => {
+          const type = categoriaToVehicleType(v.categoria)
+          return (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => openEdit(v)}
+              className="tap-press card-premium flex w-full gap-3 overflow-hidden p-2.5 text-left"
+            >
+              <div className={`relative flex h-28 w-28 shrink-0 items-center justify-center rounded-2xl ${visualByType[type]}`}>
+                <span
+                  className="absolute left-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ring-white"
+                  style={{ backgroundColor: v.color || '#3b82f6' }}
+                />
+                <VehicleIcon type={type} size="lg" />
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col py-1 pr-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-bold text-slate-900">{v.nombre}</p>
+                    <p className="text-xs text-slate-500">{getCategoriaLabel(v.categoria)}</p>
+                  </div>
+                  <Badge variant={v.estado === 'Disponible' ? 'success' : 'danger'} dot>
+                    {v.estado}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {v.capacidad} pax · {v.kilometraje.toLocaleString('es-AR')} km
+                </p>
+                <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+                  <div className="flex flex-wrap gap-1">
+                    <ExpiryBadge label="VTV" date={v.vtv_vencimiento} compact />
+                  </div>
+                  <p className="text-lg font-semibold text-brand">
+                    {formatRatePerKm(getRateForVehiculo(v))}
+                  </p>
+                </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Desktop table */}
+      <Card hover={false} className="hidden md:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-primary/10 text-left">
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Unidad</th>
-                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 hidden md:table-cell">Categoría</th>
+                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Categoría</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">Capacidad</th>
-                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right hidden sm:table-cell">Tarifa/km</th>
-                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-center hidden lg:table-cell">VTV / Seguro</th>
+                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">Tarifa/km</th>
+                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-center">Docs</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-center">Estado</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((v) => (
-                <tr key={v.id} className="border-b border-primary/5 hover:bg-primary-muted/40 group">
+                <tr
+                  key={v.id}
+                  className={`border-b border-primary/5 hover:bg-primary-muted/40 ${isAdmin ? 'cursor-pointer' : ''}`}
+                  onClick={() => openEdit(v)}
+                >
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
+                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: v.color || '#3b82f6' }} />
                       <VehicleIcon type={categoriaToVehicleType(v.categoria)} size="sm" />
-                      <div>
-                        <p className="font-semibold text-slate-900 group-hover:text-brand">{v.nombre}</p>
-                        <p className="text-xs text-slate-500 md:hidden">{getCategoriaLabel(v.categoria)}</p>
-                      </div>
+                      <p className="font-semibold text-slate-900">{v.nombre}</p>
                     </div>
                   </td>
-                  <td className="px-5 py-4 text-slate-600 hidden md:table-cell">{getCategoriaLabel(v.categoria)}</td>
-                  <td className="px-5 py-4 text-right">
-                    <span className="font-mono text-slate-900">{v.capacidad}</span>
-                    <span className="text-slate-500 text-xs ml-1">pax</span>
-                  </td>
-                  <td className="px-5 py-4 text-right font-mono text-slate-700 hidden sm:table-cell">
-                    {formatRatePerKm(getRateForVehiculo(v))}
-                  </td>
-                  <td className="px-5 py-4 hidden lg:table-cell">
-                    <div className="flex justify-center gap-2">
+                  <td className="px-5 py-4 text-slate-600">{getCategoriaLabel(v.categoria)}</td>
+                  <td className="px-5 py-4 text-right font-mono">{v.capacidad}</td>
+                  <td className="px-5 py-4 text-right font-mono">{formatRatePerKm(getRateForVehiculo(v))}</td>
+                  <td className="px-5 py-4">
+                    <div className="flex justify-center flex-wrap gap-2">
                       <ExpiryBadge label="VTV" date={v.vtv_vencimiento} />
                       <ExpiryBadge label="Seg." date={v.seguro_vencimiento} />
+                      <ExpiryBadge label="Mat." date={v.matafuegos_vencimiento} />
                     </div>
                   </td>
                   <td className="px-5 py-4 text-center">
@@ -223,51 +291,18 @@ export function FlotaView() {
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 && (
-            <div className="py-16 text-center text-sm text-slate-500">No se encontraron vehículos.</div>
-          )}
         </div>
       </Card>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((v) => (
-          <Card key={v.id}>
-            <CardBody>
-              <div className="flex items-start justify-between gap-3">
-                <VehicleIcon type={categoriaToVehicleType(v.categoria)} size="lg" />
-                <Badge variant={v.estado === 'Disponible' ? 'success' : 'danger'} dot>
-                  {v.estado}
-                </Badge>
-              </div>
-              <h3 className="mt-4 text-base font-bold text-slate-900">{v.nombre}</h3>
-              <p className="text-xs text-slate-500">{getCategoriaLabel(v.categoria)} · {v.kilometraje.toLocaleString('es-AR')} km</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <ExpiryBadge label="VTV" date={v.vtv_vencimiento} />
-                <ExpiryBadge label="Seguro" date={v.seguro_vencimiento} />
-              </div>
-              <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl bg-surface-950/80 p-3 border border-primary/10">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Capacidad</p>
-                  <p className="text-lg font-bold text-slate-900 mt-1">{v.capacidad}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Tarifa/km</p>
-                  <p className="text-lg font-bold text-brand mt-1">{formatRatePerKm(getRateForVehiculo(v))}</p>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
-        ))}
-      </div>
 
       <Modal
         open={showAdd}
         onClose={() => setShowAdd(false)}
-        title="Agregar vehículo"
+        title={editing ? 'Editar vehículo' : 'Agregar vehículo'}
+        wide
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancelar</Button>
-            <Button onClick={handleAdd} loading={saving}>Guardar</Button>
+            <Button onClick={handleSave} loading={saving}>Guardar</Button>
           </>
         }
       >
@@ -291,47 +326,50 @@ export function FlotaView() {
               <input type="number" value={form.tarifa_km} onChange={(e) => setForm({ ...form, tarifa_km: e.target.value })} className="input-field" />
             </FormField>
           </div>
+          <FormField label="Color fijo">
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="h-10 w-14 cursor-pointer rounded-xl border border-slate-200" />
+              {VEHICLE_COLOR_PRESETS.map((c) => (
+                <button key={c} type="button" onClick={() => setForm({ ...form, color: c })} className={`h-7 w-7 rounded-full ring-2 ${form.color === c ? 'ring-brand' : 'ring-transparent'}`} style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </FormField>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <FormField label="VTV">
+              <input type="date" value={form.vtv_vencimiento} onChange={(e) => setForm({ ...form, vtv_vencimiento: e.target.value })} className="input-field" />
+            </FormField>
+            <FormField label="Seguro">
+              <input type="date" value={form.seguro_vencimiento} onChange={(e) => setForm({ ...form, seguro_vencimiento: e.target.value })} className="input-field" />
+            </FormField>
+            <FormField label="Matafuegos">
+              <input type="date" value={form.matafuegos_vencimiento} onChange={(e) => setForm({ ...form, matafuegos_vencimiento: e.target.value })} className="input-field" />
+            </FormField>
+          </div>
+          <p className="flex items-center gap-2 text-xs text-slate-500">
+            <Flame className="h-3.5 w-3.5" strokeWidth={1.75} />
+            Docs vencidos no bloquean reserva futura.
+          </p>
         </div>
       </Modal>
     </div>
   )
 }
 
-function AlertCard({
-  title,
-  count,
-  level,
-  icon: Icon,
+function ExpiryBadge({
+  label,
+  date,
+  compact,
 }: {
-  title: string
-  count: number
-  level: 'ok' | 'warning' | 'danger'
-  icon: typeof AlertTriangle
+  label: string
+  date: string | null
+  compact?: boolean
 }) {
-  const styles = {
-    ok: 'border-emerald-200 bg-success-muted text-success',
-    warning: 'border-amber-200 bg-warning-muted text-warning',
-    danger: 'border-rose-200 bg-danger-muted text-danger',
-  }
-  const activeStyle = count > 0 ? styles[level] : styles.ok
-
-  return (
-    <div className={`rounded-xl border p-4 ${activeStyle}`}>
-      <div className="flex items-center justify-between">
-        <Icon className="h-5 w-5 opacity-80" />
-        <span className="text-2xl font-bold">{count}</span>
-      </div>
-      <p className="mt-2 text-sm font-semibold">{title}</p>
-      <p className="text-xs opacity-75 mt-0.5">{count === 0 ? 'Sin alertas' : 'Requiere atención'}</p>
-    </div>
-  )
-}
-
-function ExpiryBadge({ label, date }: { label: string; date: string | null }) {
   const level = getExpiryLevel(date)
   const variant = level === 'danger' ? 'danger' : level === 'warning' ? 'warning' : 'success'
   const text = date
-    ? `${label}: ${new Date(date + 'T00:00:00').toLocaleDateString('es-AR')}`
+    ? compact
+      ? label
+      : `${label}: ${new Date(date + 'T00:00:00').toLocaleDateString('es-AR')}`
     : `${label}: —`
 
   return <Badge variant={variant}>{text}</Badge>

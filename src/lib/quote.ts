@@ -50,7 +50,7 @@ function findCombinations(
   distance: number,
   vehiculos: Vehiculo[],
 ): CombinationOption[] {
-  const available = vehiculos.filter((v) => v.estado === 'Disponible')
+  const available = vehiculos
   const maxCapacity = Math.max(...vehiculos.map((v) => v.capacidad), 0)
   if (passengers <= maxCapacity) return []
 
@@ -112,7 +112,7 @@ export function calculateQuote(
   }
 
   const options = vehiculos
-    .filter((v) => v.capacidad >= passengers && v.estado === 'Disponible')
+    .filter((v) => v.capacidad >= passengers)
     .map((vehiculo) => ({
       vehiculo,
       price: distance * getRateForVehiculo(vehiculo),
