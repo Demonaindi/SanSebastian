@@ -35,6 +35,17 @@ export function formatRatePerKm(value: number): string {
   return `${formatCurrency(value)}/km`
 }
 
+export function formatDurationHours(minutes?: number | null): string | undefined {
+  if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return undefined
+  const hours = minutes / 60
+  const decimals = hours < 10 ? 1 : 0
+  const formatted = hours.toLocaleString('es-AR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+  return `~${formatted} h`
+}
+
 function buildCombinationLabel(vehiculos: Vehiculo[]): string {
   const counts = new Map<string, number>()
   for (const v of vehiculos) {

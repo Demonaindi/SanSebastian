@@ -48,6 +48,17 @@ export function getCategoriaLabel(categoria: VehiculoCategoria): string {
   return CATEGORIA_LABELS[categoria]
 }
 
+export function formatVehiculoPublico(vehiculo: Pick<Vehiculo, 'categoria' | 'capacidad'>): string {
+  return `${getCategoriaLabel(vehiculo.categoria)} · ${vehiculo.capacidad} pasajeros`
+}
+
+export function formatVehiculoInterno(
+  vehiculo: Pick<Vehiculo, 'nombre' | 'numero_interno'>,
+): string {
+  const num = vehiculo.numero_interno?.trim()
+  return num ? `Nº ${num} · ${vehiculo.nombre}` : vehiculo.nombre
+}
+
 export function buildTariffTable(vehiculos: Vehiculo[]): TariffRow[] {
   const order: VehiculoCategoria[] = ['Combi', 'Traffic', '1 piso', '2 pisos']
   const hints: Record<VehiculoCategoria, string> = {

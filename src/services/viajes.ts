@@ -12,7 +12,7 @@ const VIAJE_RELATIONS = `
   *,
   clientes ( nombre_razon_social, telefono ),
   choferes ( nombre ),
-  vehiculos ( nombre, categoria, color )
+  vehiculos ( nombre, numero_interno, categoria, color )
 `
 
 export async function fetchViajes(): Promise<ViajeWithRelations[]> {
@@ -94,11 +94,35 @@ export async function updateViajeEstado(id: string, estado_viaje: EstadoViaje): 
   return data
 }
 
-export async function finalizarViaje(id: string): Promise<void> {
-  const { error } = await supabase
+export async function updateViajeChofer(id: string, chofer_id: string | null): Promise<Viaje> {
+  const { data, error } = await supabase
     .from('viajes')
-    .update({ estado_viaje: 'Finalizado', estado_pago: 'Pagado' })
+    .update({ chofer_id })
     .eq('id', id)
+    .select('*')
+    .single()
 
   if (error) throw error
+  return data
+}
+
+export async function finalizarViaje(id: string): Promise<void> {
+  const { error } = await supabase.rpc('finalizar_viaje', { p_viaje_id: id })
+  if (error) {
+    const { error: fallbackError } = await supabase
+      .from('viajes')
+      .update({ estado_viaje: 'Finalizado' })
+      .eq('id', id)
+    if (fallbackError) throw error
+  }
+}
+
+export async function syncChoferEstado(choferId: string | null | undefined): Promise<void> {
+  if (!choferId) return
+  const { error } = await supabase.rpc('sync_chofer_estado_from_viajes', {
+    p_chofer_id: choferId,
+  })
+  if (error) {
+    // Si aún no corrieron la migración SQL, no bloqueamos la operación principal.
+  }
 }

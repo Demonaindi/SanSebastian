@@ -40,12 +40,12 @@ export function RouteMap({ origin, destination, path }: RouteMapProps) {
   ]
 
   return (
-    <div className="overflow-hidden rounded-xl border border-primary/15">
+    <div className="max-w-full min-w-0 overflow-hidden rounded-xl border border-primary/15">
       <MapContainer
         center={center}
         zoom={6}
         scrollWheelZoom={false}
-        className="h-72 w-full z-0"
+        className="z-0 h-52 w-full max-w-full sm:h-72"
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'

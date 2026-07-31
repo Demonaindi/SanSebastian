@@ -1,12 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
 import { formatCurrency } from '../lib/quote'
-import { paymentBarColor, viajeFechaFin } from '../lib/mappers'
-import { cancelarViaje, reprogramarViaje } from '../services/viajes'
-import type { ViajeWithRelations } from '../types/database'
+import { formatVehiculoInterno, getExpiryLevel, paymentBarColor, viajeFechaFin } from '../lib/mappers'
+import { cancelarViaje, finalizarViaje, reprogramarViaje, syncChoferEstado, updateViajeChofer, updateViajeEstadoPago } from '../services/viajes'
+import type { EstadoPago, ViajeWithRelations } from '../types/database'
 import { DirectReserveModal } from './modals/DirectReserveModal'
 import {
   Badge,
@@ -21,47 +21,88 @@ import {
 } from './ui'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const ESTADOS_PAGO: EstadoPago[] = ['Pendiente', 'Señado', 'Pagado']
 
 function toDateKey(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function addDays(base: string, days: number): string {
-  const d = new Date(base + 'T00:00:00')
+  const d = new Date(base + 'T12:00:00')
   d.setDate(d.getDate() + days)
   return toDateKey(d)
 }
 
 function daysBetween(from: string, to: string): number {
-  const a = new Date(from + 'T00:00:00').getTime()
-  const b = new Date(to + 'T00:00:00').getTime()
+  const a = new Date(from + 'T12:00:00').getTime()
+  const b = new Date(to + 'T12:00:00').getTime()
   return Math.round((b - a) / DAY_MS)
 }
 
 function startOfWeek(dateStr?: string): string {
-  const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date()
+  const d = dateStr ? new Date(dateStr + 'T12:00:00') : new Date()
   const day = d.getDay()
   const diff = day === 0 ? -6 : 1 - day
   d.setDate(d.getDate() + diff)
   return toDateKey(d)
 }
 
+function formatDayLabel(day: string): string {
+  return new Date(day + 'T12:00:00').toLocaleDateString('es-AR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
 export function AgendaView() {
   const { isAdmin } = useAuth()
   const { toast } = useToast()
-  const { vehiculos, viajes, loading, error, refreshViajes, refreshAll } = useData()
+  const { vehiculos, viajes, choferes, loading, error, refreshViajes, refreshAll } = useData()
   const [weekStart, setWeekStart] = useState(() => startOfWeek())
+  const [daySpan, setDaySpan] = useState(7)
+  const [mobileMode, setMobileMode] = useState<'lista' | 'semana'>('lista')
+  const [selectedDay, setSelectedDay] = useState(() => toDateKey(new Date()))
   const [reserve, setReserve] = useState<{ vehiculoId: string; from: string; to: string } | null>(null)
   const [editing, setEditing] = useState<ViajeWithRelations | null>(null)
-  const [editForm, setEditForm] = useState({ fecha_viaje: '', fecha_hasta: '', hora_viaje: '', hora_regreso: '', vehiculo_id: '' })
+  const [editForm, setEditForm] = useState({
+    fecha_viaje: '',
+    fecha_hasta: '',
+    hora_viaje: '',
+    hora_regreso: '',
+    vehiculo_id: '',
+    chofer_id: '',
+    estado_pago: 'Pendiente' as EstadoPago,
+  })
   const [busy, setBusy] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
   const [actionError, setActionError] = useState('')
 
-  const days = useMemo(() => Array.from({ length: 14 }, (_, i) => addDays(weekStart, i)), [weekStart])
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)')
+    const sync = () => setDaySpan(mq.matches ? 7 : 14)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+
+  const days = useMemo(
+    () => Array.from({ length: daySpan }, (_, i) => addDays(weekStart, i)),
+    [weekStart, daySpan],
+  )
   const weekEnd = days[days.length - 1]
 
   const activeViajes = useMemo(
-    () => viajes.filter((v) => v.estado_viaje !== 'Cancelado' && v.vehiculo_id),
+    () =>
+      viajes.filter(
+        (v) =>
+          v.estado_viaje !== 'Cancelado' &&
+          v.estado_viaje !== 'Finalizado' &&
+          v.vehiculo_id,
+      ),
     [viajes],
   )
 
@@ -83,26 +124,37 @@ export function AgendaView() {
     return map
   }, [activeViajes, vehiculos, weekStart, weekEnd])
 
+  const dayListViajes = useMemo(() => {
+    return activeViajes
+      .filter((v) => {
+        const fin = viajeFechaFin(v.fecha_viaje, v.fecha_hasta)
+        return v.fecha_viaje <= selectedDay && fin >= selectedDay
+      })
+      .sort((a, b) => (a.hora_viaje ?? '').localeCompare(b.hora_viaje ?? ''))
+  }, [activeViajes, selectedDay])
+
   const openReserve = (vehiculoId: string, day: string) => {
     if (!isAdmin) return
     setReserve({ vehiculoId, from: day, to: day })
   }
 
-  const openEdit = (viaje: ViajeWithRelations) => {
-    if (!isAdmin) return
+  const openDetail = (viaje: ViajeWithRelations) => {
     setEditing(viaje)
+    setConfirmCancel(false)
     setEditForm({
       fecha_viaje: viaje.fecha_viaje,
       fecha_hasta: viaje.fecha_hasta || viaje.fecha_viaje,
       hora_viaje: viaje.hora_viaje?.slice(0, 5) ?? '',
       hora_regreso: viaje.hora_regreso?.slice(0, 5) ?? '',
       vehiculo_id: viaje.vehiculo_id ?? '',
+      chofer_id: viaje.chofer_id ?? '',
+      estado_pago: viaje.estado_pago,
     })
     setActionError('')
   }
 
   const handleReprogramar = async () => {
-    if (!editing) return
+    if (!editing || !isAdmin) return
     setBusy(true)
     setActionError('')
     try {
@@ -114,25 +166,40 @@ export function AgendaView() {
         hora_regreso: editForm.hora_regreso || null,
         vehiculo_id: editForm.vehiculo_id || null,
       })
+      if (editForm.estado_pago !== editing.estado_pago) {
+        await updateViajeEstadoPago(editing.id, editForm.estado_pago)
+      }
+      if ((editForm.chofer_id || null) !== (editing.chofer_id || null)) {
+        await updateViajeChofer(editing.id, editForm.chofer_id || null)
+        await syncChoferEstado(editing.chofer_id)
+        await syncChoferEstado(editForm.chofer_id || null)
+      }
       await refreshAll()
       setEditing(null)
-      toast({ title: 'Viaje reprogramado', tone: 'success' })
+      toast({ title: 'Viaje actualizado', tone: 'success' })
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'No se pudo reprogramar')
-      toast({ title: 'No se pudo reprogramar', tone: 'danger' })
+      setActionError(err instanceof Error ? err.message : 'No se pudo actualizar')
+      toast({ title: 'No se pudo actualizar', tone: 'danger' })
     } finally {
       setBusy(false)
     }
   }
 
   const handleCancelar = async () => {
-    if (!editing) return
+    if (!editing || !isAdmin) return
+    if (!confirmCancel) {
+      setConfirmCancel(true)
+      return
+    }
     setBusy(true)
     setActionError('')
     try {
+      const choferId = editing.chofer_id
       await cancelarViaje(editing.id)
+      await syncChoferEstado(choferId)
       await refreshAll()
       setEditing(null)
+      setConfirmCancel(false)
       toast({ title: 'Viaje cancelado', tone: 'info' })
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'No se pudo cancelar')
@@ -142,50 +209,110 @@ export function AgendaView() {
     }
   }
 
+  const handleFinalizar = async () => {
+    if (!editing || !isAdmin) return
+    setBusy(true)
+    setActionError('')
+    try {
+      const choferId = editing.chofer_id
+      await finalizarViaje(editing.id)
+      await syncChoferEstado(choferId)
+      await refreshAll()
+      setEditing(null)
+      toast({ title: 'Viaje finalizado', message: 'El chofer quedó Disponible si no tiene otro viaje', tone: 'success' })
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo finalizar')
+      toast({ title: 'No se pudo finalizar', tone: 'danger' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handlePagoOnly = async (estado_pago: EstadoPago) => {
+    if (!editing || !isAdmin) return
+    setBusy(true)
+    try {
+      await updateViajeEstadoPago(editing.id, estado_pago)
+      setEditForm((f) => ({ ...f, estado_pago }))
+      await refreshViajes()
+      toast({ title: `Pago: ${estado_pago}`, tone: 'success' })
+    } catch (err) {
+      toast({
+        title: 'No se pudo actualizar el pago',
+        message: err instanceof Error ? err.message : undefined,
+        tone: 'danger',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (loading && vehiculos.length === 0) return <LoadingState message="Cargando agenda..." />
   if (error) return <ErrorState message={error} onRetry={refreshViajes} />
 
+  const editingVehicle = vehiculos.find((v) => v.id === (editing?.vehiculo_id ?? editForm.vehiculo_id))
+  const docWarning =
+    editingVehicle &&
+    [editingVehicle.vtv_vencimiento, editingVehicle.seguro_vencimiento, editingVehicle.matafuegos_vencimiento].some(
+      (d) => getExpiryLevel(d) === 'danger',
+    )
+
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-5 animate-fade-in md:space-y-6">
       <PageHeader
         title="Agenda de unidades"
-        description="Timeline por vehículos. Amarillo/naranja = pendiente o señado. Verde = pagado. Documentación vencida no impide reservar."
+        description="Disponibilidad por vehículo. Amarillo = Pendiente · Naranja = Señado · Verde = Pagado."
         action={
           isAdmin ? (
-            <Button
-              onClick={() => {
-                if (vehiculos[0]) openReserve(vehiculos[0].id, toDateKey(new Date()))
-              }}
-            >
-              <Plus className="h-4 w-4" />
+            <Button onClick={() => vehiculos[0] && openReserve(vehiculos[0].id, toDateKey(new Date()))}>
+              <Plus className="h-4 w-4" strokeWidth={1.75} />
               Nueva reserva
             </Button>
           ) : undefined
         }
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="secondary" size="sm" onClick={() => setWeekStart(addDays(weekStart, -7))}>
-          <ChevronLeft className="h-4 w-4" />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setWeekStart(addDays(weekStart, -daySpan))
+            setSelectedDay(addDays(selectedDay, -1))
+          }}
+        >
+          <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => setWeekStart(startOfWeek())}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            const today = toDateKey(new Date())
+            setWeekStart(startOfWeek(today))
+            setSelectedDay(today)
+          }}
+        >
           Hoy
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => setWeekStart(addDays(weekStart, 7))}>
-          <ChevronRight className="h-4 w-4" />
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setWeekStart(addDays(weekStart, daySpan))
+            setSelectedDay(addDays(selectedDay, 1))
+          }}
+        >
+          <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
         </Button>
-        <p className="text-sm font-semibold text-brand">
-          {new Date(weekStart + 'T00:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
-          {' — '}
-          {new Date(weekEnd + 'T00:00:00').toLocaleDateString('es-AR', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-          })}
+        <p className="text-sm font-semibold text-slate-900">
+          {formatDayLabel(weekStart)} — {formatDayLabel(weekEnd)}
         </p>
-        <div className="ml-auto flex flex-wrap gap-2 text-xs">
+        <div className="ml-auto flex flex-wrap gap-2">
           <Badge variant="warning" dot>
-            Pendiente / Señado
+            Pendiente
+          </Badge>
+          <Badge variant="warning" className="!bg-orange-50 !text-orange-700 !border-orange-100" dot>
+            Señado
           </Badge>
           <Badge variant="success" dot>
             Pagado
@@ -193,24 +320,149 @@ export function AgendaView() {
         </div>
       </div>
 
-      <Card hover={false} className="overflow-hidden">
+      <div className="flex gap-2 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileMode('lista')}
+          className={`tap-press flex-1 rounded-2xl border px-3 py-2 text-xs font-semibold ${
+            mobileMode === 'lista' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
+          }`}
+        >
+          Lista del día
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileMode('semana')}
+          className={`tap-press flex-1 rounded-2xl border px-3 py-2 text-xs font-semibold ${
+            mobileMode === 'semana' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
+          }`}
+        >
+          Semana (7 días)
+        </button>
+      </div>
+
+      {/* Mobile day list */}
+      <div className={`space-y-3 ${mobileMode === 'lista' ? 'lg:hidden' : 'hidden'}`}>
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar">
+          {days.map((day) => {
+            const active = day === selectedDay
+            const count = activeViajes.filter((v) => {
+              const fin = viajeFechaFin(v.fecha_viaje, v.fecha_hasta)
+              return v.fecha_viaje <= day && fin >= day
+            }).length
+            return (
+              <button
+                key={day}
+                type="button"
+                onClick={() => setSelectedDay(day)}
+                className={`tap-press shrink-0 rounded-2xl border px-3 py-2 text-center ${
+                  active ? 'border-brand bg-primary-muted' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <p className="text-[10px] font-bold uppercase text-slate-500">
+                  {new Date(day + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short' })}
+                </p>
+                <p className={`text-sm font-bold ${active ? 'text-brand' : 'text-slate-900'}`}>
+                  {new Date(day + 'T12:00:00').getDate()}
+                </p>
+                {count > 0 && <p className="text-[10px] text-slate-400">{count} viaje(s)</p>}
+              </button>
+            )
+          })}
+        </div>
+
+        {dayListViajes.length === 0 ? (
+          <Card hover={false}>
+            <CardBody className="py-10 text-center text-sm text-slate-500">
+              Sin viajes este día.
+              {isAdmin && (
+                <div className="mt-3">
+                  <Button
+                    size="sm"
+                    onClick={() => vehiculos[0] && openReserve(vehiculos[0].id, selectedDay)}
+                  >
+                    Reservar unidad
+                  </Button>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        ) : (
+          dayListViajes.map((viaje) => {
+            const unit = vehiculos.find((v) => v.id === viaje.vehiculo_id)
+            return (
+              <button
+                key={viaje.id}
+                type="button"
+                onClick={() => openDetail(viaje)}
+                className="tap-press card-premium flex w-full gap-3 p-3 text-left"
+              >
+                <div
+                  className="w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: paymentBarColor(viaje.estado_pago) }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="truncate font-bold text-slate-900">
+                      {viaje.origen} → {viaje.destino}
+                    </p>
+                    <Badge
+                      variant={
+                        viaje.estado_pago === 'Pagado'
+                          ? 'success'
+                          : viaje.estado_pago === 'Señado'
+                            ? 'warning'
+                            : 'warning'
+                      }
+                    >
+                      {viaje.estado_pago}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    <span
+                      className="mr-1 inline-block h-2 w-2 rounded-full align-middle"
+                      style={{ backgroundColor: unit?.color || '#3b82f6' }}
+                    />
+                    {unit ? formatVehiculoInterno(unit) : 'Sin unidad'} ·{' '}
+                    {viaje.clientes?.nombre_razon_social ?? 'Sin cliente'}
+                  </p>
+                  <div className="mt-2 flex items-end justify-between">
+                    <p className="text-xs text-slate-400">
+                      {viaje.hora_viaje?.slice(0, 5) ?? 'Sin hora'}
+                      {viaje.fecha_hasta && viaje.fecha_hasta !== viaje.fecha_viaje
+                        ? ` · hasta ${viaje.fecha_hasta}`
+                        : ''}
+                    </p>
+                    <p className="text-base font-semibold text-brand">
+                      {formatCurrency(Number(viaje.precio_total))}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            )
+          })
+        )}
+      </div>
+
+      {/* Timeline: mobile week + desktop */}
+      <Card
+        hover={false}
+        className={`overflow-hidden ${mobileMode === 'semana' ? 'block' : 'hidden lg:block'}`}
+      >
         <div className="overflow-x-auto">
-          <div className="min-w-[980px]">
+          <div className="min-w-[720px] lg:min-w-[980px]">
             <div
-              className="grid border-b border-primary/10 bg-surface-950/80"
-              style={{ gridTemplateColumns: `200px repeat(${days.length}, minmax(64px, 1fr))` }}
+              className="grid border-b border-slate-100 bg-slate-50"
+              style={{ gridTemplateColumns: `160px repeat(${days.length}, minmax(72px, 1fr))` }}
             >
-              <div className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <div className="sticky left-0 z-20 bg-slate-50 px-3 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 Unidad
               </div>
               {days.map((day) => {
-                const d = new Date(day + 'T00:00:00')
+                const d = new Date(day + 'T12:00:00')
                 const isToday = day === toDateKey(new Date())
                 return (
-                  <div
-                    key={day}
-                    className={`px-1 py-3 text-center ${isToday ? 'bg-primary/10' : ''}`}
-                  >
+                  <div key={day} className={`px-1 py-3 text-center ${isToday ? 'bg-primary/10' : ''}`}>
                     <p className="text-[10px] font-bold uppercase text-slate-500">
                       {d.toLocaleDateString('es-AR', { weekday: 'short' })}
                     </p>
@@ -227,66 +479,68 @@ export function AgendaView() {
               return (
                 <div
                   key={vehiculo.id}
-                  className="grid border-b border-primary/5 hover:bg-primary-muted/20"
-                  style={{ gridTemplateColumns: `200px repeat(${days.length}, minmax(64px, 1fr))` }}
+                  className="grid border-b border-slate-50"
+                  style={{ gridTemplateColumns: `160px repeat(${days.length}, minmax(72px, 1fr))` }}
                 >
-                  <div className="flex items-center gap-3 px-4 py-4">
+                  <div className="sticky left-0 z-20 flex items-center gap-2 border-r border-slate-100 bg-white px-3 py-3">
                     <span
-                      className="h-3 w-3 shrink-0 rounded-full ring-2 ring-white shadow"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: vehiculo.color || '#3b82f6' }}
-                      title="Color fijo de la unidad"
                     />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">{vehiculo.nombre}</p>
-                      <p className="text-[11px] text-slate-500">{vehiculo.capacidad} pax</p>
+                      <p className="truncate text-xs font-semibold text-slate-900">
+                        {formatVehiculoInterno(vehiculo)}
+                      </p>
+                      <p className="text-[10px] text-slate-400">{vehiculo.capacidad} pax</p>
                     </div>
                   </div>
 
-                  <div
-                    className="relative col-span-full contents"
-                    style={{ display: 'contents' }}
-                  >
-                    {days.map((day, dayIdx) => (
-                      <button
-                        key={`${vehiculo.id}-${day}`}
-                        type="button"
-                        disabled={!isAdmin}
-                        onClick={() => openReserve(vehiculo.id, day)}
-                        className={`relative min-h-[64px] border-l border-primary/5 ${
-                          isAdmin ? 'cursor-pointer hover:bg-primary/5' : 'cursor-default'
-                        }`}
-                        title={isAdmin ? 'Click para reservar' : 'Solo visualización'}
-                      >
-                        {bars
-                          .filter((b) => b.startIdx === dayIdx)
-                          .map(({ viaje, span }) => (
-                            <button
-                              key={viaje.id}
-                              type="button"
-                              onClick={(e) => {
+                  {days.map((day, dayIdx) => (
+                    <div
+                      key={`${vehiculo.id}-${day}`}
+                      role={isAdmin ? 'button' : undefined}
+                      tabIndex={isAdmin ? 0 : undefined}
+                      onClick={() => openReserve(vehiculo.id, day)}
+                      onKeyDown={(e) => {
+                        if (isAdmin && (e.key === 'Enter' || e.key === ' ')) openReserve(vehiculo.id, day)
+                      }}
+                      className={`relative min-h-[56px] border-l border-slate-50 ${
+                        isAdmin ? 'cursor-pointer hover:bg-primary/5' : ''
+                      }`}
+                    >
+                      {bars
+                        .filter((b) => b.startIdx === dayIdx)
+                        .map(({ viaje, span }) => (
+                          <div
+                            key={viaje.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openDetail(viaje)
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
                                 e.stopPropagation()
-                                openEdit(viaje)
-                              }}
-                              className="absolute top-2 bottom-2 z-10 overflow-hidden rounded-md px-2 py-1 text-left text-[11px] font-semibold text-white shadow-sm"
-                              style={{
-                                left: 4,
-                                width: `calc(${span * 100}% - 8px)`,
-                                backgroundColor: paymentBarColor(viaje.estado_pago),
-                                borderLeft: `4px solid ${vehiculo.color || '#fff'}`,
-                              }}
-                              title={`${viaje.origen} → ${viaje.destino} · ${viaje.estado_pago}`}
-                            >
-                              <span className="block truncate">
-                                {viaje.origen} → {viaje.destino}
-                              </span>
-                              <span className="block truncate opacity-90">
-                                {formatCurrency(Number(viaje.precio_total))} · {viaje.estado_pago}
-                              </span>
-                            </button>
-                          ))}
-                      </button>
-                    ))}
-                  </div>
+                                openDetail(viaje)
+                              }
+                            }}
+                            className="absolute top-1.5 bottom-1.5 z-10 overflow-hidden rounded-lg px-2 py-1 text-left text-[10px] font-semibold text-white"
+                            style={{
+                              left: 3,
+                              width: `calc(${span * 100}% - 6px)`,
+                              backgroundColor: paymentBarColor(viaje.estado_pago),
+                              borderLeft: `3px solid ${vehiculo.color || '#fff'}`,
+                            }}
+                            title={`${viaje.origen} → ${viaje.destino}`}
+                          >
+                            <span className="block truncate">
+                              {viaje.origen} → {viaje.destino}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  ))}
                 </div>
               )
             })}
@@ -300,13 +554,14 @@ export function AgendaView() {
 
       {!isAdmin && (
         <p className="flex items-center gap-2 text-xs text-slate-500">
-          <CalendarDays className="h-4 w-4" />
-          Modo operador: visualización de disponibilidad. Las reservas las gestiona un administrador.
+          <CalendarDays className="h-4 w-4" strokeWidth={1.75} />
+          Modo operador: podés ver disponibilidad y detalle. Las reservas las gestiona un administrador.
         </p>
       )}
 
       {reserve && (
         <DirectReserveModal
+          key={`${reserve.vehiculoId}-${reserve.from}-${reserve.to}`}
           open={!!reserve}
           onClose={() => setReserve(null)}
           onSuccess={() => setReserve(null)}
@@ -318,31 +573,42 @@ export function AgendaView() {
 
       <Modal
         open={!!editing}
-        onClose={() => setEditing(null)}
-        title="Gestionar reserva"
+        onClose={() => {
+          setEditing(null)
+          setConfirmCancel(false)
+        }}
+        title={isAdmin ? 'Gestionar reserva' : 'Detalle del viaje'}
         wide
         footer={
           isAdmin ? (
             <>
               <Button variant="secondary" onClick={handleCancelar} loading={busy}>
-                Cancelar viaje
+                {confirmCancel ? 'Confirmar cancelación' : 'Cancelar viaje'}
               </Button>
+              {editing && editing.estado_viaje !== 'Finalizado' && (
+                <Button variant="secondary" onClick={handleFinalizar} loading={busy}>
+                  Finalizar viaje
+                </Button>
+              )}
               <Button onClick={handleReprogramar} loading={busy}>
-                Reprogramar
+                Guardar cambios
               </Button>
             </>
-          ) : undefined
+          ) : (
+            <Button variant="secondary" onClick={() => setEditing(null)}>
+              Cerrar
+            </Button>
+          )
         }
       >
         {editing && (
           <div className="space-y-4">
-            <div className="rounded-xl bg-surface-950 p-4 text-sm">
+            <div className="rounded-2xl bg-slate-50 p-4 text-sm">
               <p className="font-semibold text-slate-900">
                 {editing.origen} → {editing.destino}
               </p>
-              <p className="text-slate-600 mt-1">
-                {editing.clientes?.nombre_razon_social ?? 'Sin cliente'} · {editing.estado_pago} ·{' '}
-                {editing.estado_viaje}
+              <p className="mt-1 text-slate-600">
+                {editing.clientes?.nombre_razon_social ?? 'Sin cliente'} · {editing.estado_viaje}
               </p>
               {editing.paradas_intermedias && (
                 <p className="mt-2 text-xs text-slate-500">Itinerario: {editing.paradas_intermedias}</p>
@@ -352,10 +618,37 @@ export function AgendaView() {
                   Llegada aproximada: {editing.hora_llegada_aprox.slice(0, 5)}
                 </p>
               )}
+              <p className="mt-2 text-lg font-bold text-brand">
+                {formatCurrency(Number(editing.precio_total))}
+              </p>
             </div>
 
-            {isAdmin && (
+            {docWarning && (
+              <p className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Esta unidad tiene documentación vencida o crítica. Se permite reservar, pero conviene
+                habilitarla antes del servicio.
+              </p>
+            )}
+
+            {isAdmin ? (
               <>
+                <FormField label="Estado de pago">
+                  <select
+                    value={editForm.estado_pago}
+                    onChange={(e) => {
+                      const next = e.target.value as EstadoPago
+                      setEditForm({ ...editForm, estado_pago: next })
+                      void handlePagoOnly(next)
+                    }}
+                    className="input-field"
+                  >
+                    {ESTADOS_PAGO.map((e) => (
+                      <option key={e} value={e}>
+                        {e}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <FormField label="Fecha desde">
                     <input
@@ -404,11 +697,50 @@ export function AgendaView() {
                     ))}
                   </select>
                 </FormField>
+                <FormField label="Chofer">
+                  <select
+                    value={editForm.chofer_id}
+                    onChange={(e) => setEditForm({ ...editForm, chofer_id: e.target.value })}
+                    className="input-field"
+                  >
+                    <option value="">Sin asignar</option>
+                    {choferes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre} · {c.estado}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+                {confirmCancel && (
+                  <p className="rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    ¿Seguro que querés cancelar este viaje? Tocá otra vez para confirmar.
+                  </p>
+                )}
               </>
+            ) : (
+              <div className="grid gap-2 text-sm text-slate-600">
+                <p>
+                  <span className="font-semibold text-slate-800">Pago:</span> {editing.estado_pago}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-800">Fechas:</span> {editing.fecha_viaje}
+                  {editing.fecha_hasta && editing.fecha_hasta !== editing.fecha_viaje
+                    ? ` → ${editing.fecha_hasta}`
+                    : ''}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-800">Unidad:</span>{' '}
+                  {editing.vehiculos ? formatVehiculoInterno(editing.vehiculos) : '—'}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-800">Chofer:</span>{' '}
+                  {editing.choferes?.nombre ?? '—'}
+                </p>
+              </div>
             )}
 
             {actionError && (
-              <p className="rounded-lg bg-danger-muted px-3 py-2 text-sm text-danger">{actionError}</p>
+              <p className="rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{actionError}</p>
             )}
           </div>
         )}

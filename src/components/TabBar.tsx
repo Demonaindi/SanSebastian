@@ -1,7 +1,9 @@
 export type TabId =
   | 'home'
   | 'cotizador'
+  | 'cotizaciones'
   | 'agenda'
+  | 'metricas'
   | 'flota'
   | 'clientes'
   | 'choferes'

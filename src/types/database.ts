@@ -37,6 +37,7 @@ export interface Chofer {
 export interface Vehiculo {
   id: string
   nombre: string
+  numero_interno: string | null
   categoria: VehiculoCategoria
   capacidad: number
   tarifa_km: number
@@ -74,7 +75,7 @@ export interface Viaje {
 export interface ViajeWithRelations extends Viaje {
   clientes?: Pick<Cliente, 'nombre_razon_social' | 'telefono'> | null
   choferes?: Pick<Chofer, 'nombre'> | null
-  vehiculos?: Pick<Vehiculo, 'nombre' | 'categoria' | 'color'> | null
+  vehiculos?: Pick<Vehiculo, 'nombre' | 'numero_interno' | 'categoria' | 'color'> | null
 }
 
 export interface Presupuesto {
@@ -155,6 +156,7 @@ export interface NewChoferInput {
 
 export interface NewVehiculoInput {
   nombre: string
+  numero_interno?: string | null
   categoria: VehiculoCategoria
   capacidad: number
   tarifa_km: number

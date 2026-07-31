@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext'
 import {
   buildTariffTable,
   categoriaToVehicleType,
+  formatVehiculoInterno,
   getCategoriaLabel,
   getExpiryLevel,
   getRateForVehiculo,
@@ -41,6 +42,7 @@ const filters: { id: FilterType; label: string }[] = [
 
 const emptyForm = {
   nombre: '',
+  numero_interno: '',
   categoria: 'Combi' as VehiculoCategoria,
   capacidad: '',
   tarifa_km: '',
@@ -94,7 +96,10 @@ export function FlotaView() {
       const q = search.toLowerCase()
       return (
         matchesType &&
-        (!q || v.nombre.toLowerCase().includes(q) || getCategoriaLabel(v.categoria).toLowerCase().includes(q))
+        (!q ||
+          v.nombre.toLowerCase().includes(q) ||
+          (v.numero_interno ?? '').toLowerCase().includes(q) ||
+          getCategoriaLabel(v.categoria).toLowerCase().includes(q))
       )
     })
   }, [vehiculos, search, filter])
@@ -110,6 +115,7 @@ export function FlotaView() {
     setEditing(v)
     setForm({
       nombre: v.nombre,
+      numero_interno: v.numero_interno ?? '',
       categoria: v.categoria,
       capacidad: String(v.capacidad),
       tarifa_km: String(v.tarifa_km),
@@ -126,6 +132,7 @@ export function FlotaView() {
     try {
       const payload = {
         nombre: form.nombre,
+        numero_interno: form.numero_interno.trim() || null,
         categoria: form.categoria,
         capacidad: parseInt(form.capacidad, 10),
         tarifa_km: parseFloat(form.tarifa_km),
@@ -220,7 +227,9 @@ export function FlotaView() {
               <div className="flex min-w-0 flex-1 flex-col py-1 pr-1">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-[15px] font-bold text-slate-900">{v.nombre}</p>
+                    <p className="truncate text-[15px] font-bold text-slate-900">
+                      {formatVehiculoInterno(v)}
+                    </p>
                     <p className="text-xs text-slate-500">{getCategoriaLabel(v.categoria)}</p>
                   </div>
                   <Badge variant={v.estado === 'Disponible' ? 'success' : 'danger'} dot>
@@ -251,6 +260,7 @@ export function FlotaView() {
             <thead>
               <tr className="border-b border-primary/10 text-left">
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Unidad</th>
+                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Nº interno</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Categoría</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">Capacidad</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">Tarifa/km</th>
@@ -271,6 +281,9 @@ export function FlotaView() {
                       <VehicleIcon type={categoriaToVehicleType(v.categoria)} size="sm" />
                       <p className="font-semibold text-slate-900">{v.nombre}</p>
                     </div>
+                  </td>
+                  <td className="px-5 py-4 font-mono text-slate-700">
+                    {v.numero_interno?.trim() || '—'}
                   </td>
                   <td className="px-5 py-4 text-slate-600">{getCategoriaLabel(v.categoria)}</td>
                   <td className="px-5 py-4 text-right font-mono">{v.capacidad}</td>
@@ -307,9 +320,19 @@ export function FlotaView() {
         }
       >
         <div className="space-y-4">
-          <FormField label="Nombre">
-            <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="input-field" />
-          </FormField>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Nombre">
+              <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="input-field" />
+            </FormField>
+            <FormField label="Nº interno">
+              <input
+                value={form.numero_interno}
+                onChange={(e) => setForm({ ...form, numero_interno: e.target.value })}
+                className="input-field"
+                placeholder="Ej: 101"
+              />
+            </FormField>
+          </div>
           <FormField label="Categoría">
             <select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value as VehiculoCategoria })} className="input-field">
               <option value="Combi">Combi</option>

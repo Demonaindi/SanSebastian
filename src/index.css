@@ -137,7 +137,10 @@ body::before {
 }
 
 .input-field {
+  box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border-radius: 0.875rem;
   border: 1px solid #cbd5e1;
   background: #ffffff;
@@ -189,6 +192,11 @@ body::before {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+body[data-modal-open='true'] .app-bottom-nav {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .tap-press {
   transition: transform 0.12s ease, background-color 0.15s ease;
 }
@@ -233,6 +241,8 @@ body::before {
 
 .leaflet-container {
   font-family: var(--font-sans);
+  width: 100% !important;
+  max-width: 100%;
 }
 
 .route-map-tooltip.leaflet-tooltip {

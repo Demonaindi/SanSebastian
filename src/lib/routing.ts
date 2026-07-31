@@ -1,4 +1,5 @@
 const ARGENTINA_BBOX = '-73.5,-55.2,-53.5,-21.8'
+const FETCH_TIMEOUT_MS = 12000
 
 export interface MapPoint {
   lat: number
@@ -22,6 +23,21 @@ interface GeocodeResult {
   label: string
 }
 
+async function fetchWithTimeout(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('La consulta de ruta tardó demasiado. Probá de nuevo.')
+    }
+    throw err
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 async function geocodeAddress(query: string): Promise<GeocodeResult> {
   const trimmed = query.trim()
   const search = /argentina/i.test(trimmed) ? trimmed : `${trimmed}, Argentina`
@@ -31,7 +47,7 @@ async function geocodeAddress(query: string): Promise<GeocodeResult> {
     bbox: ARGENTINA_BBOX,
   })
 
-  const response = await fetch(`https://photon.komoot.io/api/?${params}`)
+  const response = await fetchWithTimeout(`https://photon.komoot.io/api/?${params}`)
   if (!response.ok) {
     throw new Error(`No se pudo ubicar "${trimmed}" en el mapa.`)
   }
@@ -63,7 +79,7 @@ async function fetchDrivingRoute(
   const coords = `${from.lon},${from.lat};${to.lon},${to.lat}`
   const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
 
-  const response = await fetch(url)
+  const response = await fetchWithTimeout(url)
   if (!response.ok) {
     throw new Error('No se pudo calcular la ruta entre origen y destino.')
   }

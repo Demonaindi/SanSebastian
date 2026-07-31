@@ -15,6 +15,7 @@ import type { Profile, UserRole } from '../types/database'
 interface AuthContextValue {
   session: Session | null
   profile: Profile | null
+  profileError: string | null
   loading: boolean
   isAdmin: boolean
   role: UserRole | null
@@ -22,6 +23,7 @@ interface AuthContextValue {
   signOut: () => Promise<void>
   updatePassword: (password: string) => Promise<void>
   deleteAccount: () => Promise<void>
+  reloadProfile: () => Promise<void>
   configured: boolean
 }
 
@@ -30,16 +32,24 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [profileError, setProfileError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const loadProfile = useCallback(async (userId: string) => {
     try {
       const data = await fetchProfile(userId)
       setProfile(data)
-    } catch {
+      setProfileError(data ? null : 'No se encontró el perfil del usuario.')
+    } catch (err) {
       setProfile(null)
+      setProfileError(err instanceof Error ? err.message : 'No se pudo cargar el perfil.')
     }
   }, [])
+
+  const reloadProfile = useCallback(async () => {
+    if (!session?.user) return
+    await loadProfile(session.user.id)
+  }, [session, loadProfile])
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -59,9 +69,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession)
       if (nextSession?.user) {
-        loadProfile(nextSession.user.id)
+        void loadProfile(nextSession.user.id)
       } else {
         setProfile(null)
+        setProfileError(null)
       }
     })
 
@@ -93,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       session,
       profile,
+      profileError,
       loading,
       isAdmin: profile?.rol === 'Administrador',
       role: profile?.rol ?? null,
@@ -100,9 +112,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       updatePassword,
       deleteAccount,
+      reloadProfile,
       configured: isSupabaseConfigured,
     }),
-    [session, profile, loading, signIn, signOut, updatePassword, deleteAccount],
+    [
+      session,
+      profile,
+      profileError,
+      loading,
+      signIn,
+      signOut,
+      updatePassword,
+      deleteAccount,
+      reloadProfile,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
-  Calendar,
   Calculator,
   CheckCircle2,
-  Clock,
+  Image,
   FileDown,
   MapPin,
   MessageCircle,
+  MoreHorizontal,
   Printer,
   Route,
   Sparkles,
@@ -20,6 +20,8 @@ import { useToast } from '../contexts/ToastContext'
 import {
   buildTariffTable,
   categoriaToVehicleType,
+  formatPresupuestoNumero,
+  formatVehiculoInterno,
   getCategoriaLabel,
   getRateForVehiculo,
 } from '../lib/mappers'
@@ -29,16 +31,21 @@ import {
   printQuote,
   type QuoteExportData,
 } from '../lib/exportQuote'
+import { exportQuoteImage } from '../lib/exportQuoteImage'
 import { getDrivingRouteDistance } from '../lib/routing'
 import {
   calculateQuote,
   formatCurrency,
+  formatDurationHours,
   formatRatePerKm,
   type QuoteResult,
 } from '../lib/quote'
 import { generarPresupuesto } from '../services/presupuestos'
 import type { Vehiculo } from '../types/database'
 import { ConfirmTripModal } from './modals/ConfirmTripModal'
+import { CotizadorSubNav } from './CotizadorSubNav'
+import { RouteMap } from './RouteMap'
+import type { TabId } from './TabBar'
 import { TariffTable } from './TariffTable'
 import { VehicleIcon } from './VehicleIcon'
 import {
@@ -51,12 +58,17 @@ import {
   ErrorState,
   FormField,
   LoadingState,
+  Modal,
   PageHeader,
   SkeletonCard,
   StatCard,
 } from './ui'
 
-export function CotizadorView() {
+interface CotizadorViewProps {
+  onNavigate: (tab: TabId) => void
+}
+
+export function CotizadorView({ onNavigate }: CotizadorViewProps) {
   const { isAdmin } = useAuth()
   const { toast } = useToast()
   const { vehiculos, loading, error, refreshVehiculos } = useData()
@@ -75,7 +87,11 @@ export function CotizadorView() {
   const [resultKey, setResultKey] = useState(0)
   const [calculating, setCalculating] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [selectedOption, setSelectedOption] = useState<{ vehiculo: Vehiculo; price: number; base: number } | null>(null)
+  const [selectedOption, setSelectedOption] = useState<{
+    vehiculo: Vehiculo
+    price: number
+    base: number
+  } | null>(null)
   const [successMsg, setSuccessMsg] = useState('')
   const [exportingId, setExportingId] = useState<string | null>(null)
 
@@ -158,6 +174,7 @@ export function CotizadorView() {
       destino: quote?.destinationResolved ?? destination,
       pasajeros: parseInt(passengers, 10),
       fecha: tripDate,
+      fechaHasta: tripDateUntil || tripDate || undefined,
       hora: tripTime,
       distancia: quote?.distance ?? 0,
       duracionMinutos: quote?.durationMinutes,
@@ -172,14 +189,25 @@ export function CotizadorView() {
   const handleExport = async (
     vehiculo: Vehiculo,
     basePrice: number,
-    mode: 'pdf' | 'print' | 'wa',
+    mode: 'pdf' | 'print' | 'wa' | 'image',
   ) => {
     setExportingId(vehiculo.id)
     try {
       const data = await buildExportPayload(vehiculo, basePrice)
       if (mode === 'pdf') exportQuotePdf(data)
       else if (mode === 'print') printQuote(data)
+      else if (mode === 'image') await exportQuoteImage(data)
       else window.open(buildWhatsAppUrl(data), '_blank')
+      toast({
+        title:
+          mode === 'wa'
+            ? 'WhatsApp listo'
+            : mode === 'image'
+              ? 'Imagen descargada'
+              : 'Presupuesto generado',
+        message: data.presupuesto ? formatPresupuestoNumero(data.presupuesto.numero) : undefined,
+        tone: 'success',
+      })
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'No se pudo generar el presupuesto')
     } finally {
@@ -191,11 +219,13 @@ export function CotizadorView() {
   if (error) return <ErrorState message={error} onRetry={refreshVehiculos} />
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="min-w-0 max-w-full space-y-5 overflow-x-hidden animate-fade-in md:space-y-8">
       <PageHeader
         title="Cotizador Rápido"
         description="El precio se calcula por ruta lineal Origen → Destino. Las paradas intermedias se cargan como texto del itinerario y no suman kilómetros automáticamente."
       />
+
+      <CotizadorSubNav active="cotizador" onNavigate={onNavigate} />
 
       {successMsg && (
         <Alert title="Reserva registrada" variant="info" icon={CheckCircle2}>
@@ -205,14 +235,14 @@ export function CotizadorView() {
 
       <TariffTable tariffs={tariffs} compact />
 
-      <div className="grid gap-6 xl:grid-cols-5">
-        <div className="xl:col-span-2">
-          <Card hover={false}>
+      <div className="grid min-w-0 gap-5 xl:grid-cols-5 xl:gap-6">
+        <div className="min-w-0 xl:col-span-2">
+          <Card hover={false} className="min-w-0 overflow-hidden">
             <CardHeader title="Datos del viaje" subtitle="Origen, destino y pasajeros obligatorios" />
-            <CardBody className="space-y-5">
+            <CardBody className="space-y-4 md:space-y-5">
               <FormField label="Punto de partida">
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <div className="relative min-w-0">
+                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                   <input
                     type="text"
                     value={origin}
@@ -224,14 +254,14 @@ export function CotizadorView() {
               </FormField>
 
               <div className="flex justify-center">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-muted border border-primary/20">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary-muted">
                   <ArrowRight className="h-4 w-4 rotate-90 text-brand xl:rotate-0" />
                 </div>
               </div>
 
               <FormField label="Punto de destino">
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <div className="relative min-w-0">
+                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                   <input
                     type="text"
                     value={destination}
@@ -246,17 +276,18 @@ export function CotizadorView() {
                 <textarea
                   value={stops}
                   onChange={(e) => setStops(e.target.value)}
-                  className="input-field min-h-[80px]"
-                  placeholder="Ej: Parada club / Predio hockey / Hotel. No suman km al cálculo."
+                  className="input-field min-h-[72px] resize-y"
+                  placeholder="Ej: Club / Predio / Hotel. No suman km."
                 />
               </FormField>
 
               <FormField label="Cantidad de pasajeros">
-                <div className="relative">
-                  <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <div className="relative min-w-0">
+                  <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                   <input
                     type="number"
                     min={1}
+                    inputMode="numeric"
                     value={passengers}
                     onChange={(e) => setPassengers(e.target.value)}
                     placeholder="Ej: 35"
@@ -265,55 +296,55 @@ export function CotizadorView() {
                 </div>
               </FormField>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <FormField label="Fecha desde">
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                    <input
-                      type="date"
-                      value={tripDate}
-                      onChange={(e) => {
-                        setTripDate(e.target.value)
-                        if (!tripDateUntil || tripDateUntil < e.target.value) {
-                          setTripDateUntil(e.target.value)
-                        }
-                      }}
-                      className="input-field input-field-icon"
-                    />
-                  </div>
+                  <input
+                    type="date"
+                    value={tripDate}
+                    onChange={(e) => {
+                      setTripDate(e.target.value)
+                      if (!tripDateUntil || tripDateUntil < e.target.value) {
+                        setTripDateUntil(e.target.value)
+                      }
+                    }}
+                    className="input-field"
+                  />
                 </FormField>
                 <FormField label="Fecha hasta">
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                    <input
-                      type="date"
-                      value={tripDateUntil || tripDate}
-                      min={tripDate || undefined}
-                      onChange={(e) => setTripDateUntil(e.target.value)}
-                      className="input-field input-field-icon"
-                    />
-                  </div>
+                  <input
+                    type="date"
+                    value={tripDateUntil || tripDate}
+                    min={tripDate || undefined}
+                    onChange={(e) => setTripDateUntil(e.target.value)}
+                    className="input-field"
+                  />
                 </FormField>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <FormField label="Hora salida">
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                    <input type="time" value={tripTime} onChange={(e) => setTripTime(e.target.value)} className="input-field input-field-icon" />
-                  </div>
+                  <input
+                    type="time"
+                    value={tripTime}
+                    onChange={(e) => setTripTime(e.target.value)}
+                    className="input-field"
+                  />
                 </FormField>
                 <FormField label="Llegada (aprox.)">
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                    <input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className="input-field input-field-icon" />
-                  </div>
+                  <input
+                    type="time"
+                    value={arrivalTime}
+                    onChange={(e) => setArrivalTime(e.target.value)}
+                    className="input-field"
+                  />
                 </FormField>
                 <FormField label="Hora regreso">
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                    <input type="time" value={returnTime} onChange={(e) => setReturnTime(e.target.value)} className="input-field input-field-icon" />
-                  </div>
+                  <input
+                    type="time"
+                    value={returnTime}
+                    onChange={(e) => setReturnTime(e.target.value)}
+                    className="input-field"
+                  />
                 </FormField>
               </div>
 
@@ -331,7 +362,7 @@ export function CotizadorView() {
           </Card>
         </div>
 
-        <div className="xl:col-span-3">
+        <div className="min-w-0 xl:col-span-3">
           {calculating && (
             <div className="space-y-3">
               <SkeletonCard />
@@ -342,37 +373,62 @@ export function CotizadorView() {
           )}
 
           {!calculating && !quote && (
-            <Card hover={false} className="min-h-[320px]">
-              <CardBody className="flex flex-col items-center justify-center text-center min-h-[280px] py-12">
-                <Route className="h-12 w-12 text-brand mb-4" />
+            <Card hover={false} className="hidden min-h-[280px] xl:block">
+              <CardBody className="flex min-h-[280px] flex-col items-center justify-center py-12 text-center">
+                <Route className="mb-4 h-12 w-12 text-brand" />
                 <h3 className="text-lg font-semibold text-slate-900">Listo para cotizar</h3>
                 <p className="mt-2 max-w-sm text-sm text-slate-500">
-                  Completá el formulario. El administrador puede editar el total antes de emitir el presupuesto.
+                  Completá el formulario. El administrador puede editar el total antes de emitir el
+                  presupuesto.
                 </p>
               </CardBody>
             </Card>
           )}
 
           {!calculating && quote && (
-            <div key={resultKey} className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-3">
+            <div key={resultKey} className="min-w-0 space-y-4 md:space-y-6">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                 <StatCard
                   label="Distancia lineal"
                   value={`${quote.distance} km`}
                   icon={Route}
                   tone="info"
-                  trend={quote.durationMinutes ? `~${quote.durationMinutes} min` : 'Origen → Destino'}
+                  trend={
+                    formatDurationHours(quote.durationMinutes) ?? 'Origen → Destino'
+                  }
                 />
-                <StatCard label="Opciones" value={String(quote.options.length)} icon={Sparkles} tone={quote.options.length > 0 ? 'success' : 'warning'} />
-                <StatCard label="Combinaciones" value={String(quote.combinations.length)} icon={Users} tone={quote.combinations.length > 0 ? 'warning' : 'default'} />
+                <StatCard
+                  label="Opciones"
+                  value={String(quote.options.length)}
+                  icon={Sparkles}
+                  tone={quote.options.length > 0 ? 'success' : 'warning'}
+                />
+                <StatCard
+                  label="Combinaciones"
+                  value={String(quote.combinations.length)}
+                  icon={Users}
+                  tone={quote.combinations.length > 0 ? 'warning' : 'default'}
+                />
               </div>
 
+              {quote.originPoint && quote.destinationPoint && quote.routePath && (
+                <RouteMap
+                  origin={quote.originPoint}
+                  destination={quote.destinationPoint}
+                  path={quote.routePath}
+                />
+              )}
+
               {(quote.originResolved || quote.destinationResolved) && (
-                <div className="card-elevated rounded-xl px-5 py-4 flex flex-wrap items-center gap-3">
-                  <Badge variant="info">{quote.originResolved ?? origin}</Badge>
-                  <ArrowRight className="h-4 w-4 text-slate-400" />
-                  <Badge variant="info">{quote.destinationResolved ?? destination}</Badge>
-                  <span className="text-xs text-slate-500 ml-auto">
+                <div className="card-elevated flex min-w-0 flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 sm:px-5 sm:py-4">
+                  <Badge variant="info" className="max-w-full truncate">
+                    {quote.originResolved ?? origin}
+                  </Badge>
+                  <ArrowRight className="hidden h-4 w-4 shrink-0 text-slate-400 sm:block" />
+                  <Badge variant="info" className="max-w-full truncate">
+                    {quote.destinationResolved ?? destination}
+                  </Badge>
+                  <span className="text-xs text-slate-500 sm:ml-auto">
                     {passengers} pax · {quote.distance} km
                   </span>
                 </div>
@@ -385,7 +441,7 @@ export function CotizadorView() {
               )}
 
               {quote.options.length > 0 && (
-                <div className="space-y-4">
+                <div className="min-w-0 space-y-3 md:space-y-4">
                   <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
                     Vehículos recomendados
                   </h3>
@@ -405,6 +461,7 @@ export function CotizadorView() {
                       onConfirm={() => openConfirm(opt)}
                       canConfirm={isAdmin}
                       onExportPdf={() => handleExport(opt.vehiculo, opt.price, 'pdf')}
+                      onExportImage={() => handleExport(opt.vehiculo, opt.price, 'image')}
                       onPrint={() => handleExport(opt.vehiculo, opt.price, 'print')}
                       onWhatsApp={() => handleExport(opt.vehiculo, opt.price, 'wa')}
                     />
@@ -419,18 +476,21 @@ export function CotizadorView() {
               )}
 
               {quote.combinations.length > 0 && (
-                <div className="space-y-3">
+                <div className="min-w-0 space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
                     Combinaciones sugeridas
                   </h3>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {quote.combinations.map((combo, index) => (
-                      <article key={`${combo.label}-${index}`} className="card-elevated rounded-xl p-5 space-y-3">
+                      <article
+                        key={`${combo.label}-${index}`}
+                        className="card-elevated min-w-0 space-y-3 rounded-xl p-4 sm:p-5"
+                      >
                         <div className="flex justify-between gap-2">
                           <Badge variant="warning">Combinación</Badge>
                           <p className="text-xl font-bold text-warning">{formatCurrency(combo.price)}</p>
                         </div>
-                        <p className="font-semibold text-slate-900">{combo.label}</p>
+                        <p className="break-words font-semibold text-slate-900">{combo.label}</p>
                         <p className="text-xs text-slate-500">
                           {combo.totalCapacity} pax · {quote.distance} km
                         </p>
@@ -449,7 +509,9 @@ export function CotizadorView() {
           open={confirmOpen}
           onClose={() => setConfirmOpen(false)}
           onSuccess={() => {
-            setSuccessMsg(`Reserva registrada: ${origin} → ${destination} con ${selectedOption.vehiculo.nombre}.`)
+            setSuccessMsg(
+              `Reserva registrada: ${origin} → ${destination} con ${selectedOption.vehiculo.nombre}.`,
+            )
             toast({
               title: 'Viaje asignado con éxito',
               message: `${selectedOption.vehiculo.nombre} · ${origin} → ${destination}`,
@@ -488,6 +550,7 @@ function QuoteOptionCard({
   onConfirm,
   canConfirm,
   onExportPdf,
+  onExportImage,
   onPrint,
   onWhatsApp,
 }: {
@@ -502,22 +565,26 @@ function QuoteOptionCard({
   onConfirm: () => void
   canConfirm: boolean
   onExportPdf: () => void
+  onExportImage: () => void
   onPrint: () => void
   onWhatsApp: () => void
 }) {
   const { vehiculo, price } = option
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   return (
     <article
-      className="animate-result card-elevated rounded-xl overflow-hidden"
+      className="animate-result card-elevated min-w-0 overflow-hidden rounded-xl"
       style={{ animationDelay: `${index * 70}ms`, opacity: 0 }}
     >
-      <div className="flex flex-col lg:flex-row">
-        <div className="flex items-center gap-4 border-b lg:border-b-0 lg:border-r border-primary/10 p-5 lg:w-56 shrink-0">
+      <div className="flex min-w-0 flex-col lg:flex-row">
+        <div className="flex min-w-0 items-center gap-3 border-b border-primary/10 p-4 sm:gap-4 sm:p-5 lg:w-56 lg:shrink-0 lg:border-b-0 lg:border-r">
           <VehicleIcon type={categoriaToVehicleType(vehiculo.categoria)} size="lg" />
-          <div>
-            <p className="font-semibold text-slate-900">{vehiculo.nombre}</p>
-            <p className="text-xs text-slate-500">{getCategoriaLabel(vehiculo.categoria)}</p>
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-slate-900">
+              {formatVehiculoInterno(vehiculo)}
+            </p>
+            <p className="truncate text-xs text-slate-500">{getCategoriaLabel(vehiculo.categoria)}</p>
             {featured && (
               <Badge variant="info" className="mt-2">
                 Mejor precio base
@@ -526,45 +593,51 @@ function QuoteOptionCard({
           </div>
         </div>
 
-        <div className="flex flex-1 flex-col gap-4 p-5">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <div>
+        <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 sm:p-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+            <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase text-slate-500">Capacidad</p>
               <p className="text-sm font-semibold text-slate-900">{vehiculo.capacidad} pax</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase text-slate-500">Tarifa/km</p>
-              <p className="text-sm font-semibold text-slate-700">
+              <p className="truncate text-sm font-semibold text-slate-700">
                 {formatRatePerKm(getRateForVehiculo(vehiculo))}
               </p>
             </div>
-            <div className="col-span-2 sm:col-span-1">
+            <div className="col-span-2 min-w-0 sm:col-span-1">
               <p className="text-[10px] font-bold uppercase text-slate-500">Cálculo base</p>
-              <p className="text-xs text-slate-500">
-                {distance} km × {formatRatePerKm(getRateForVehiculo(vehiculo))} = {formatCurrency(price)}
+              <p className="break-words text-xs text-slate-500">
+                {distance} km × {formatRatePerKm(getRateForVehiculo(vehiculo))} ={' '}
+                {formatCurrency(price)}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-primary/10 pt-4">
-            <div className="min-w-[180px]">
-              <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">
+          <div className="flex min-w-0 flex-col gap-3 border-t border-primary/10 pt-4">
+            <div className="min-w-0 w-full">
+              <p className="mb-1 text-[10px] font-bold uppercase text-slate-500">
                 Precio final {canEditPrice ? '(editable)' : '(solo admin)'}
               </p>
               {canEditPrice ? (
                 <input
                   type="number"
                   min={0}
+                  inputMode="decimal"
                   value={editedPrice}
                   onChange={(e) => onPriceChange(parseFloat(e.target.value) || 0)}
-                  className="input-field font-bold text-lg text-brand"
+                  className="input-field text-lg font-bold text-brand"
                 />
               ) : (
                 <p className="text-2xl font-bold text-brand">{formatCurrency(editedPrice)}</p>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" onClick={onExportPdf} loading={exporting}>
+
+            <div className="hidden flex-wrap gap-2 sm:flex">
+              <Button size="sm" variant="secondary" onClick={onExportImage} loading={exporting}>
+                <Image className="h-4 w-4" /> Imagen
+              </Button>
+              <Button size="sm" variant="secondary" onClick={onExportPdf} disabled={exporting}>
                 <FileDown className="h-4 w-4" /> PDF
               </Button>
               <Button size="sm" variant="secondary" onClick={onPrint} disabled={exporting}>
@@ -579,9 +652,84 @@ function QuoteOptionCard({
                 </Button>
               )}
             </div>
+
+            <div className="flex w-full min-w-0 gap-2 sm:hidden">
+              {canConfirm && (
+                <Button size="sm" className="min-w-0 flex-1" onClick={onConfirm}>
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> Reservar
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                className="min-w-0 flex-1"
+                onClick={() => setSheetOpen(true)}
+              >
+                <MoreHorizontal className="h-4 w-4 shrink-0" /> Acciones
+              </Button>
+            </div>
           </div>
         </div>
       </div>
+
+      <Modal
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        title={`Acciones · ${formatVehiculoInterno(vehiculo)}`}
+        sheetSize="half"
+        footer={
+          <Button variant="secondary" className="w-full" onClick={() => setSheetOpen(false)}>
+            Cerrar
+          </Button>
+        }
+      >
+        <div className="space-y-2">
+          <Button
+            className="w-full"
+            variant="secondary"
+            loading={exporting}
+            onClick={() => {
+              onExportImage()
+              setSheetOpen(false)
+            }}
+          >
+            <Image className="h-4 w-4" /> Descargar imagen llamativa
+          </Button>
+          <Button
+            className="w-full"
+            variant="secondary"
+            disabled={exporting}
+            onClick={() => {
+              onExportPdf()
+              setSheetOpen(false)
+            }}
+          >
+            <FileDown className="h-4 w-4" /> Exportar PDF / imprimir
+          </Button>
+          <Button
+            className="w-full"
+            variant="secondary"
+            disabled={exporting}
+            onClick={() => {
+              onPrint()
+              setSheetOpen(false)
+            }}
+          >
+            <Printer className="h-4 w-4" /> Imprimir
+          </Button>
+          <Button
+            className="w-full"
+            variant="secondary"
+            disabled={exporting}
+            onClick={() => {
+              onWhatsApp()
+              setSheetOpen(false)
+            }}
+          >
+            <MessageCircle className="h-4 w-4" /> Enviar por WhatsApp
+          </Button>
+        </div>
+      </Modal>
     </article>
   )
 }

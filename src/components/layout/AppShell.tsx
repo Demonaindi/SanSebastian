@@ -1,9 +1,11 @@
 import {
+  BarChart3,
   Bus,
   Calculator,
   CalendarDays,
   ChevronRight,
   Contact,
+  History,
   Home,
   LayoutDashboard,
   LogOut,
@@ -31,8 +33,21 @@ const allNavItems: {
   adminOnly?: boolean
 }[] = [
   { id: 'home', label: 'Inicio', icon: Home, description: 'Accesos rápidos' },
-  { id: 'cotizador', label: 'Cotizador', icon: Calculator, description: 'Cotizar viajes' },
+  { id: 'cotizador', label: 'Cotizar', icon: Calculator, description: 'Nueva cotización' },
+  {
+    id: 'cotizaciones',
+    label: 'Cotizaciones',
+    icon: History,
+    description: 'Historial de presupuestos',
+  },
   { id: 'agenda', label: 'Agenda', icon: CalendarDays, description: 'Disponibilidad por unidad' },
+  {
+    id: 'metricas',
+    label: 'Números',
+    icon: BarChart3,
+    description: 'Comparativa mes a mes',
+    adminOnly: true,
+  },
   { id: 'flota', label: 'Flota', icon: Bus, description: 'Gestionar vehículos', adminOnly: true },
   { id: 'clientes', label: 'Clientes', icon: Contact, description: 'CRM de clientes', adminOnly: true },
   { id: 'choferes', label: 'Choferes', icon: UserCog, description: 'Personal de conducción', adminOnly: true },
@@ -47,8 +62,12 @@ const accountNavItem = {
 
 const mobilePrimary: TabId[] = ['home', 'cotizador', 'agenda', 'cuenta']
 
+function isCotizadorGroup(tab: TabId) {
+  return tab === 'cotizador' || tab === 'cotizaciones'
+}
+
 export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
-  const { profile, isAdmin, signOut } = useAuth()
+  const { profile, isAdmin, signOut, profileError, reloadProfile } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const navItems = useMemo(
@@ -56,30 +75,23 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
     [isAdmin],
   )
 
-  const desktopNav = useMemo(
-    () => navItems.filter((item) => item.id !== 'home'),
-    [navItems],
-  )
+  const desktopNav = useMemo(() => navItems, [navItems])
 
   const activeItem =
     activeTab === 'cuenta'
       ? accountNavItem
-      : (navItems.find((n) => n.id === activeTab) ?? navItems[0])
+      : activeTab === 'cotizaciones'
+        ? {
+            id: 'cotizaciones' as TabId,
+            label: 'Cotizaciones',
+            description: 'Historial de presupuestos',
+          }
+        : (navItems.find((n) => n.id === activeTab) ?? navItems[0])
 
   useEffect(() => {
     const allowed = new Set<TabId>([...navItems.map((n) => n.id), 'cuenta'])
     if (!allowed.has(activeTab)) onTabChange('cotizador')
   }, [activeTab, navItems, onTabChange])
-
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)')
-    const sync = () => {
-      if (mq.matches && activeTab === 'home') onTabChange('cotizador')
-    }
-    sync()
-    mq.addEventListener('change', sync)
-    return () => mq.removeEventListener('change', sync)
-  }, [activeTab, onTabChange])
 
   const mobileTabs = mobilePrimary.map((id) => {
     if (id === 'cuenta') {
@@ -87,7 +99,11 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
     }
     const found = navItems.find((n) => n.id === id)
     return found
-      ? { id: found.id, label: found.label === 'Cotizador' ? 'Cotizar' : found.label, icon: found.icon }
+      ? {
+          id: found.id,
+          label: found.id === 'cotizador' ? 'Cotizar' : found.label,
+          icon: found.icon,
+        }
       : { id, label: id, icon: Home }
   })
 
@@ -119,13 +135,19 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
           <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white/40">Módulos</p>
           {desktopNav.map((item) => {
             const Icon = item.icon
-            const isActive = activeTab === item.id
+            const isActive =
+              activeTab === item.id ||
+              (item.id === 'cotizador' && isCotizadorGroup(activeTab) && activeTab === 'cotizador') ||
+              (item.id === 'cotizaciones' && activeTab === 'cotizaciones')
+            const indent = item.id === 'cotizaciones'
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => onTabChange(item.id)}
                 className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-all ${
+                  indent ? 'ml-2 w-[calc(100%-0.5rem)]' : ''
+                } ${
                   isActive ? 'bg-white/15 text-white shadow-inner' : 'text-white/70 hover:bg-white/10 hover:text-white'
                 }`}
               >
@@ -234,12 +256,26 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
                 <span className="truncate font-semibold text-brand">{activeItem.label}</span>
               </div>
             </div>
-            <img src="/logo.png" alt="" className="h-8 w-auto object-contain lg:hidden" />
+            <img src="/logo.png" alt="" className="h-16 w-auto object-contain lg:hidden" />
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-6 lg:py-6">
-          <div className="mx-auto max-w-6xl">{children}</div>
+        <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-[calc(6.25rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:px-8 lg:pb-6 lg:py-6">
+          <div className="mx-auto w-full min-w-0 max-w-6xl space-y-4">
+            {profileError && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <p>Perfil incompleto: {profileError}</p>
+                <button
+                  type="button"
+                  onClick={() => void reloadProfile()}
+                  className="font-semibold text-brand underline"
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
+            {children}
+          </div>
         </main>
 
         <footer className="hidden shrink-0 border-t border-primary/10 px-6 py-4 text-center text-xs text-slate-500 lg:block">
@@ -247,8 +283,10 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
         </footer>
       </div>
 
-      {/* Mobile bottom navigation */}
-      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/80 backdrop-blur-md lg:hidden">
+      <nav
+        className="app-bottom-nav safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 backdrop-blur-md lg:hidden"
+        aria-label="Navegación principal"
+      >
         <div className="mx-auto flex max-w-lg items-stretch justify-around px-2 pt-2">
           {mobileTabs.map((tab) => {
             const Icon = tab.icon
@@ -259,15 +297,24 @@ export function AppShell({ activeTab, onTabChange, children }: AppShellProps) {
                 type="button"
                 onClick={() => onTabChange(tab.id)}
                 className={`tap-press flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-1.5 transition-all ${
-                  isActive ? 'text-brand' : 'text-slate-400'
+                  isActive || (tab.id === 'cotizador' && isCotizadorGroup(activeTab))
+                    ? 'text-brand'
+                    : 'text-slate-400'
                 }`}
               >
                 <span
                   className={`flex h-9 w-9 items-center justify-center rounded-2xl transition-all ${
-                    isActive ? 'bg-primary-muted scale-105' : 'bg-transparent'
+                    isActive || (tab.id === 'cotizador' && isCotizadorGroup(activeTab))
+                      ? 'bg-primary-muted scale-105'
+                      : 'bg-transparent'
                   }`}
                 >
-                  <Icon className="h-5 w-5" strokeWidth={isActive ? 2 : 1.6} />
+                  <Icon
+                    className="h-5 w-5"
+                    strokeWidth={
+                      isActive || (tab.id === 'cotizador' && isCotizadorGroup(activeTab)) ? 2 : 1.6
+                    }
+                  />
                 </span>
                 <span className="text-[10px] font-semibold tracking-wide">{tab.label}</span>
               </button>

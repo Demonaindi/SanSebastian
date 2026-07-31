@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { UserPlus } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { createCliente } from '../../services/clientes'
-import { confirmarViaje } from '../../services/viajes'
+import { confirmarViaje, syncChoferEstado } from '../../services/viajes'
+import { formatVehiculoInterno } from '../../lib/mappers'
 import { Button, FormField, Modal } from '../ui'
 
 interface DirectReserveModalProps {
@@ -42,6 +43,12 @@ export function DirectReserveModal({
   const [newTelefono, setNewTelefono] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setFechaDesde(fechaInicio)
+    setFechaHasta(fechaFin || fechaInicio)
+  }, [open, fechaInicio, fechaFin])
 
   const choferesOpts = useMemo(() => choferes, [choferes])
 
@@ -108,6 +115,7 @@ export function DirectReserveModal({
         chofer_id: choferId || null,
         vehiculo_id: vehiculo.id,
       })
+      await syncChoferEstado(choferId || null)
       await refreshAll()
       onSuccess()
       onClose()
@@ -122,7 +130,7 @@ export function DirectReserveModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Reserva directa — ${vehiculo?.nombre ?? 'Unidad'}`}
+      title={`Reserva directa — ${vehiculo ? formatVehiculoInterno(vehiculo) : 'Unidad'}`}
       wide
       footer={
         <>

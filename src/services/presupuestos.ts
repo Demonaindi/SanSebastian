@@ -40,3 +40,17 @@ export async function generarPresupuesto(input: GenerarPresupuestoInput): Promis
     condiciones_pago: data.condiciones_pago || CONDICIONES_PAGO_DEFAULT,
   } as Presupuesto
 }
+
+export async function listPresupuestos(limit = 20): Promise<Presupuesto[]> {
+  const { data, error } = await supabase
+    .from('presupuestos')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return (data ?? []).map((row) => ({
+    ...row,
+    condiciones_pago: row.condiciones_pago || CONDICIONES_PAGO_DEFAULT,
+  })) as Presupuesto[]
+}

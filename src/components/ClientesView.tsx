@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Pencil, Phone, Plus, Users } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Pencil, Phone, Plus, Search, Users } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
@@ -34,6 +34,19 @@ export function ClientesView() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [query, setQuery] = useState('')
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return clientes
+    return clientes.filter(
+      (c) =>
+        c.nombre_razon_social.toLowerCase().includes(q) ||
+        (c.telefono ?? '').toLowerCase().includes(q) ||
+        (c.cuil_cuit_dni ?? '').toLowerCase().includes(q) ||
+        (c.email ?? '').toLowerCase().includes(q),
+    )
+  }, [clientes, query])
 
   const openCreate = () => {
     setEditing(null)
@@ -108,8 +121,25 @@ export function ClientesView() {
 
       <StatCard label="Clientes activos" value={String(clientes.length)} icon={Users} tone="info" />
 
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" strokeWidth={1.75} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar por nombre, teléfono o CUIT..."
+          className="input-field input-field-icon"
+        />
+      </div>
+
       <div className="space-y-3 md:hidden">
-        {clientes.map((c) => (
+        {filtered.length === 0 ? (
+          <Card hover={false}>
+            <CardBody className="py-10 text-center text-sm text-slate-500">
+              {query.trim() ? 'Sin resultados para esa búsqueda.' : 'Todavía no hay clientes.'}
+            </CardBody>
+          </Card>
+        ) : (
+          filtered.map((c) => (
           <button
             key={c.id}
             type="button"
@@ -135,7 +165,8 @@ export function ClientesView() {
             </div>
             <Pencil className="h-4 w-4 shrink-0 text-slate-300" strokeWidth={1.75} />
           </button>
-        ))}
+          ))
+        )}
       </div>
 
       <Card hover={false} className="hidden md:block">
@@ -151,7 +182,14 @@ export function ClientesView() {
               </tr>
             </thead>
             <tbody>
-              {clientes.map((c) => (
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-12 text-center text-slate-500">
+                    {query.trim() ? 'Sin resultados para esa búsqueda.' : 'Todavía no hay clientes.'}
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((c) => (
                 <tr key={c.id} className="border-b border-primary/5 hover:bg-primary-muted/30">
                   <td className="px-5 py-4 font-semibold text-slate-900">{c.nombre_razon_social}</td>
                   <td className="px-5 py-4 text-slate-700">{c.telefono}</td>
@@ -166,7 +204,8 @@ export function ClientesView() {
                     </Button>
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
             </tbody>
           </table>
         </div>

@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { UserPlus } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useData } from '../../contexts/DataContext'
 import { createCliente } from '../../services/clientes'
-import { confirmarViaje } from '../../services/viajes'
+import { confirmarViaje, syncChoferEstado } from '../../services/viajes'
 import { formatCurrency } from '../../lib/quote'
-import { getCategoriaLabel } from '../../lib/mappers'
+import { getCategoriaLabel, formatVehiculoInterno, getExpiryLevel } from '../../lib/mappers'
 import type { Vehiculo } from '../../types/database'
 import { Button, FormField, Modal } from '../ui'
 
@@ -26,6 +26,8 @@ interface ConfirmTripModalProps {
   precioBaseCalculado: number
   paradasIntermedias: string
   vehiculo: Vehiculo
+  editableSchedule?: boolean
+  title?: string
 }
 
 export function ConfirmTripModal({
@@ -45,11 +47,18 @@ export function ConfirmTripModal({
   precioBaseCalculado,
   paradasIntermedias,
   vehiculo,
+  editableSchedule = false,
+  title = 'Confirmar reserva',
 }: ConfirmTripModalProps) {
   const { isAdmin } = useAuth()
   const { clientes, choferes, refreshAll } = useData()
   const [clienteId, setClienteId] = useState('')
   const [choferId, setChoferId] = useState('')
+  const [fecha, setFecha] = useState(fechaViaje)
+  const [hasta, setHasta] = useState(fechaHasta || fechaViaje)
+  const [horaSalida, setHoraSalida] = useState(horaViaje)
+  const [horaLlegada, setHoraLlegada] = useState(horaLlegadaAprox)
+  const [horaVuelta, setHoraVuelta] = useState(horaRegreso)
   const [showNewCliente, setShowNewCliente] = useState(false)
   const [newNombre, setNewNombre] = useState('')
   const [newTelefono, setNewTelefono] = useState('')
@@ -58,10 +67,34 @@ export function ConfirmTripModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    if (!open) return
+    setFecha(fechaViaje)
+    setHasta(fechaHasta || fechaViaje)
+    setHoraSalida(horaViaje)
+    setHoraLlegada(horaLlegadaAprox)
+    setHoraVuelta(horaRegreso)
+    setClienteId('')
+    setChoferId('')
+    setShowNewCliente(false)
+    setError('')
+  }, [open, fechaViaje, fechaHasta, horaViaje, horaLlegadaAprox, horaRegreso])
+
   const choferesDisponibles = useMemo(
     () => choferes.filter((c) => c.estado === 'Disponible' || c.estado === 'En viaje'),
     [choferes],
   )
+
+  const docWarning = useMemo(() => {
+    const levels = [
+      getExpiryLevel(vehiculo.vtv_vencimiento),
+      getExpiryLevel(vehiculo.seguro_vencimiento),
+      getExpiryLevel(vehiculo.matafuegos_vencimiento),
+    ]
+    if (levels.includes('danger')) return 'danger' as const
+    if (levels.includes('warning')) return 'warning' as const
+    return null
+  }, [vehiculo])
 
   const handleCreateCliente = async () => {
     if (!newNombre.trim() || !newTelefono.trim()) {
@@ -96,23 +129,29 @@ export function ConfirmTripModal({
       setError('Seleccioná un cliente.')
       return
     }
-    if (!fechaViaje) {
+    const fechaFinal = editableSchedule ? fecha : fechaViaje
+    if (!fechaFinal) {
       setError('La fecha de salida es obligatoria.')
       return
     }
     setLoading(true)
     setError('')
 
+    const hastaFinal = editableSchedule ? hasta || fechaFinal : fechaHasta || fechaViaje
+    const horaFinal = editableSchedule ? horaSalida : horaViaje
+    const llegadaFinal = editableSchedule ? horaLlegada : horaLlegadaAprox
+    const regresoFinal = editableSchedule ? horaVuelta : horaRegreso
+
     try {
       await confirmarViaje({
         origen,
         destino,
         pasajeros,
-        fecha_viaje: fechaViaje,
-        fecha_hasta: fechaHasta || fechaViaje,
-        hora_viaje: horaViaje || null,
-        hora_regreso: horaRegreso || null,
-        hora_llegada_aprox: horaLlegadaAprox || null,
+        fecha_viaje: fechaFinal,
+        fecha_hasta: hastaFinal || fechaFinal,
+        hora_viaje: horaFinal || null,
+        hora_regreso: regresoFinal || null,
+        hora_llegada_aprox: llegadaFinal || null,
         distancia_km: distancia,
         precio_total: precioTotal,
         precio_base_calculado: precioBaseCalculado,
@@ -121,6 +160,7 @@ export function ConfirmTripModal({
         chofer_id: choferId || null,
         vehiculo_id: vehiculo.id,
       })
+      await syncChoferEstado(choferId || null)
       await refreshAll()
       onSuccess()
       onClose()
@@ -136,7 +176,7 @@ export function ConfirmTripModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Confirmar reserva"
+      title={title}
       wide
       footer={
         <>
@@ -144,7 +184,7 @@ export function ConfirmTripModal({
             Cancelar
           </Button>
           <Button onClick={handleConfirm} loading={loading} disabled={!isAdmin}>
-            Confirmar reserva
+            Confirmar viaje
           </Button>
         </>
       }
@@ -155,24 +195,79 @@ export function ConfirmTripModal({
             {origen} → {destino}
           </p>
           <p className="mt-1 text-slate-600">
-            {vehiculo.nombre} · {getCategoriaLabel(vehiculo.categoria)} · {pasajeros} pax
+            {formatVehiculoInterno(vehiculo)} · {getCategoriaLabel(vehiculo.categoria)} · {pasajeros} pax
             {distancia > 0 ? ` · ${distancia} km` : ''}
           </p>
-          <p className="mt-1 text-slate-600">
-            {fechaViaje}
-            {fechaHasta && fechaHasta !== fechaViaje ? ` → ${fechaHasta}` : ' (mismo día)'}
-            {horaViaje ? ` · Salida ${horaViaje}` : ''}
-            {horaLlegadaAprox ? ` · Llegada aprox. ${horaLlegadaAprox}` : ''}
-            {horaRegreso ? ` · Regreso ${horaRegreso}` : ''}
-          </p>
+          {!editableSchedule && (
+            <p className="mt-1 text-slate-600">
+              {fechaViaje}
+              {fechaHasta && fechaHasta !== fechaViaje ? ` → ${fechaHasta}` : ' (mismo día)'}
+              {horaViaje ? ` · Salida ${horaViaje}` : ''}
+              {horaLlegadaAprox ? ` · Llegada aprox. ${horaLlegadaAprox}` : ''}
+              {horaRegreso ? ` · Regreso ${horaRegreso}` : ''}
+            </p>
+          )}
           {paradasIntermedias && (
             <p className="mt-1 text-xs text-slate-500">Itinerario: {paradasIntermedias}</p>
           )}
           <p className="mt-2 text-lg font-bold text-brand">{formatCurrency(precioTotal)}</p>
         </div>
 
+        {editableSchedule && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Fecha desde *">
+              <input
+                type="date"
+                value={fecha}
+                onChange={(e) => {
+                  setFecha(e.target.value)
+                  if (!hasta || hasta < e.target.value) setHasta(e.target.value)
+                }}
+                className="input-field"
+              />
+            </FormField>
+            <FormField label="Fecha hasta *">
+              <input
+                type="date"
+                value={hasta || fecha}
+                min={fecha || undefined}
+                onChange={(e) => setHasta(e.target.value)}
+                className="input-field"
+              />
+            </FormField>
+            <FormField label="Hora salida">
+              <input
+                type="time"
+                value={horaSalida}
+                onChange={(e) => setHoraSalida(e.target.value)}
+                className="input-field"
+              />
+            </FormField>
+            <FormField label="Hora regreso">
+              <input
+                type="time"
+                value={horaVuelta}
+                onChange={(e) => setHoraVuelta(e.target.value)}
+                className="input-field"
+              />
+            </FormField>
+          </div>
+        )}
+
+        {docWarning === 'danger' && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Esta unidad tiene documentación vencida o crítica (≤7 días). Se puede reservar igual; avisá al
+            cliente y planificá la habilitación antes del servicio.
+          </p>
+        )}
+        {docWarning === 'warning' && (
+          <p className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2 text-xs text-amber-800">
+            Documentación próxima a vencer (≤15 días). Revisá VTV, seguro o matafuegos.
+          </p>
+        )}
+
         {!showNewCliente ? (
-          <FormField label="Cliente">
+          <FormField label="Cliente *">
             <div className="flex gap-2">
               <select
                 value={clienteId}
@@ -227,9 +322,13 @@ export function ConfirmTripModal({
             {choferesDisponibles.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nombre} — Lic. {c.licencia_categoria}
+                {c.estado === 'En viaje' ? ' (en viaje)' : ''}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Al asignarlo queda En viaje automáticamente; al finalizar el viaje vuelve a Disponible.
+          </p>
         </FormField>
 
         {error && <p className="rounded-lg bg-danger-muted px-3 py-2 text-sm text-danger">{error}</p>}

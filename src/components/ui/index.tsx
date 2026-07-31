@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 interface PageHeaderProps {
   title: string
@@ -32,7 +33,7 @@ interface CardProps {
 export function Card({ children, className = '', featured, hover = true }: CardProps) {
   return (
     <div
-      className={`card-elevated rounded-2xl overflow-hidden transition-all duration-200 ${
+      className={`card-elevated min-w-0 overflow-hidden rounded-2xl transition-all duration-200 ${
         featured ? 'ring-1 ring-primary/30' : ''
       } ${hover ? 'hover:shadow-lg hover:shadow-primary/10' : ''} ${className}`}
     >
@@ -62,7 +63,7 @@ export function CardHeader({
 }
 
 export function CardBody({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`p-5 ${className}`}>{children}</div>
+  return <div className={`min-w-0 p-4 sm:p-5 ${className}`}>{children}</div>
 }
 
 interface BadgeProps {
@@ -231,9 +232,9 @@ interface FormFieldProps {
 
 export function FormField({ label, children, hint }: FormFieldProps) {
   return (
-    <label className="block space-y-2">
+    <label className="block min-w-0 space-y-2">
       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-      {children}
+      <div className="min-w-0">{children}</div>
       {hint && <span className="block text-xs text-slate-500">{hint}</span>}
     </label>
   )
@@ -261,40 +262,68 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, children, footer, wide, sheetSize = 'tall' }: ModalProps) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.body.dataset.modalOpen = 'true'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      delete document.body.dataset.modalOpen
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open, onClose])
+
   if (!open) return null
 
-  const sheetHeight = sheetSize === 'half' ? 'max-h-[55vh]' : 'max-h-[85vh]'
+  const sheetHeight = sheetSize === 'half' ? 'max-h-[55vh]' : 'max-h-[88vh]'
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center md:items-center md:p-4">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[120] flex items-end justify-center md:items-center md:p-4"
+      role="presentation"
+    >
       <button
         type="button"
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-slate-900/45 backdrop-blur-[2px]"
         onClick={onClose}
-        aria-label="Cerrar"
+        aria-label="Cerrar diálogo"
       />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
         className={`animate-sheet relative z-10 flex w-full flex-col rounded-t-3xl bg-white shadow-2xl md:animate-fade-in md:rounded-3xl ${
           wide ? 'md:max-w-2xl' : 'md:max-w-lg'
         } ${sheetHeight} md:max-h-[90vh]`}
       >
-        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-slate-200 md:hidden" />
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-slate-200 md:hidden" aria-hidden />
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h3 id="modal-title" className="min-w-0 truncate text-lg font-bold text-slate-900">
+            {title}
+          </h3>
           <button
             type="button"
             onClick={onClose}
-            className="tap-press rounded-full p-2 text-slate-400 hover:bg-slate-100"
+            className="tap-press shrink-0 rounded-full p-2 text-slate-400 hover:bg-slate-100"
+            aria-label="Cerrar"
           >
             <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
         {footer && (
-          <div className="safe-bottom flex flex-wrap gap-2 border-t border-slate-100 px-5 py-4">{footer}</div>
+          <div className="safe-bottom flex shrink-0 flex-wrap gap-2 border-t border-slate-100 bg-white px-5 py-4">
+            {footer}
+          </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
