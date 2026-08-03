@@ -82,6 +82,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
   const [arrivalTime, setArrivalTime] = useState('')
   const [returnTime, setReturnTime] = useState('')
   const [quote, setQuote] = useState<QuoteResult | null>(null)
+  const [editedDistance, setEditedDistance] = useState('')
   const [editedPrices, setEditedPrices] = useState<Record<string, number>>({})
   const [formError, setFormError] = useState('')
   const [resultKey, setResultKey] = useState(0)
@@ -97,6 +98,15 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
 
   const tariffs = useMemo(() => buildTariffTable(vehiculos), [vehiculos])
 
+  const applyQuoteResult = (result: QuoteResult) => {
+    setQuote(result)
+    setEditedDistance(String(result.distance))
+    const prices: Record<string, number> = {}
+    for (const opt of result.options) prices[opt.vehiculo.id] = opt.price
+    setEditedPrices(prices)
+    setResultKey((k) => k + 1)
+  }
+
   const handleCalculate = async () => {
     const pax = parseInt(passengers, 10)
     if (!origin.trim() || !destination.trim()) {
@@ -109,11 +119,17 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
       setQuote(null)
       return
     }
+    if (vehiculos.length === 0) {
+      setFormError('No hay vehículos en Flota. Cargá al menos una unidad para poder cotizar.')
+      setQuote(null)
+      return
+    }
     setFormError('')
     setSuccessMsg('')
     setCalculating(true)
     setQuote(null)
     setEditedPrices({})
+    setEditedDistance('')
 
     try {
       const route = await getDrivingRouteDistance(origin, destination)
@@ -129,12 +145,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
         setFormError('No se pudo armar la cotización con los datos ingresados.')
         return
       }
-      setQuote(result)
-      const prices: Record<string, number> = {}
-      for (const opt of result.options) prices[opt.vehiculo.id] = opt.price
-      setEditedPrices(prices)
-      setResultKey((k) => k + 1)
-      if (!tripDateUntil && tripDate) setTripDateUntil(tripDate)
+      applyQuoteResult(result)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Error al calcular la ruta.')
     } finally {
@@ -142,7 +153,33 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
     }
   }
 
+  const handleDistanceChange = (raw: string) => {
+    setEditedDistance(raw)
+    if (!quote) return
+    const nextDistance = parseFloat(raw.replace(',', '.'))
+    if (!Number.isFinite(nextDistance) || nextDistance <= 0) return
+
+    const pax = parseInt(passengers, 10) || quote.options[0]?.vehiculo.capacidad || 1
+    const result = calculateQuote(pax, vehiculos, nextDistance, {
+      durationMinutes: quote.durationMinutes,
+      originResolved: quote.originResolved,
+      destinationResolved: quote.destinationResolved,
+      originPoint: quote.originPoint,
+      destinationPoint: quote.destinationPoint,
+      routePath: quote.routePath,
+    })
+    if (!result) return
+
+    setQuote(result)
+    const prices: Record<string, number> = {}
+    for (const opt of result.options) prices[opt.vehiculo.id] = opt.price
+    setEditedPrices(prices)
+  }
+
   const getPrice = (vehiculoId: string, base: number) => editedPrices[vehiculoId] ?? base
+  const activeDistance = quote
+    ? parseFloat(editedDistance.replace(',', '.')) || quote.distance
+    : 0
 
   const openConfirm = (option: { vehiculo: Vehiculo; price: number }) => {
     if (!isAdmin) return
@@ -162,7 +199,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
       pasajeros: parseInt(passengers, 10),
       fecha_viaje: tripDate || null,
       hora_viaje: tripTime || null,
-      distancia_km: quote?.distance ?? 0,
+      distancia_km: activeDistance,
       vehiculo_nombre: vehiculo.nombre,
       vehiculo_categoria: vehiculo.categoria,
       precio_total: precioTotal,
@@ -173,10 +210,10 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
       origen: quote?.originResolved ?? origin,
       destino: quote?.destinationResolved ?? destination,
       pasajeros: parseInt(passengers, 10),
-      fecha: tripDate,
-      fechaHasta: tripDateUntil || tripDate || undefined,
-      hora: tripTime,
-      distancia: quote?.distance ?? 0,
+      fecha: tripDate || undefined,
+      fechaHasta: tripDateUntil || undefined,
+      hora: tripTime || undefined,
+      distancia: activeDistance,
       duracionMinutos: quote?.durationMinutes,
       vehiculo,
       precioTotal,
@@ -238,8 +275,17 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
       <div className="grid min-w-0 gap-5 xl:grid-cols-5 xl:gap-6">
         <div className="min-w-0 xl:col-span-2">
           <Card hover={false} className="min-w-0 overflow-hidden">
-            <CardHeader title="Datos del viaje" subtitle="Origen, destino y pasajeros obligatorios" />
+            <CardHeader
+              title="Datos del viaje"
+              subtitle="Origen, destino y pasajeros son obligatorios. Fecha y horario son opcionales."
+            />
             <CardBody className="space-y-4 md:space-y-5">
+              {vehiculos.length === 0 && (
+                <Alert title="Sin flota cargada" variant="warning" icon={AlertTriangle}>
+                  No hay vehículos. Cargá unidades en Flota para poder cotizar.
+                </Alert>
+              )}
+
               <FormField label="Punto de partida">
                 <div className="relative min-w-0">
                   <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
@@ -297,32 +343,34 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
               </FormField>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <FormField label="Fecha desde">
+                <FormField label="Fecha desde (opcional)">
                   <input
                     type="date"
                     value={tripDate}
                     onChange={(e) => {
                       setTripDate(e.target.value)
-                      if (!tripDateUntil || tripDateUntil < e.target.value) {
+                      if (e.target.value && tripDateUntil && tripDateUntil < e.target.value) {
                         setTripDateUntil(e.target.value)
                       }
+                      if (!e.target.value) setTripDateUntil('')
                     }}
                     className="input-field"
                   />
                 </FormField>
-                <FormField label="Fecha hasta">
+                <FormField label="Fecha hasta (opcional)">
                   <input
                     type="date"
-                    value={tripDateUntil || tripDate}
+                    value={tripDateUntil}
                     min={tripDate || undefined}
                     onChange={(e) => setTripDateUntil(e.target.value)}
                     className="input-field"
+                    disabled={!tripDate}
                   />
                 </FormField>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <FormField label="Hora salida">
+                <FormField label="Hora salida (opcional)">
                   <input
                     type="time"
                     value={tripTime}
@@ -330,7 +378,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
                     className="input-field"
                   />
                 </FormField>
-                <FormField label="Llegada (aprox.)">
+                <FormField label="Llegada aprox. (opcional)">
                   <input
                     type="time"
                     value={arrivalTime}
@@ -338,7 +386,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
                     className="input-field"
                   />
                 </FormField>
-                <FormField label="Hora regreso">
+                <FormField label="Hora regreso (opcional)">
                   <input
                     type="time"
                     value={returnTime}
@@ -388,15 +436,33 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
           {!calculating && quote && (
             <div key={resultKey} className="min-w-0 space-y-4 md:space-y-6">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-                <StatCard
-                  label="Distancia lineal"
-                  value={`${quote.distance} km`}
-                  icon={Route}
-                  tone="info"
-                  trend={
-                    formatDurationHours(quote.durationMinutes) ?? 'Origen → Destino'
-                  }
-                />
+                <div className="card-elevated rounded-xl p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                        Kilómetros
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0.1}
+                          step={0.1}
+                          inputMode="decimal"
+                          value={editedDistance}
+                          onChange={(e) => handleDistanceChange(e.target.value)}
+                          className="input-field max-w-[8.5rem] text-2xl font-bold tracking-tight text-brand"
+                        />
+                        <span className="text-sm font-semibold text-slate-500">km</span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatDurationHours(quote.durationMinutes) ?? 'Editable · recalcula precios'}
+                      </p>
+                    </div>
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted text-brand">
+                      <Route className="h-5 w-5" />
+                    </div>
+                  </div>
+                </div>
                 <StatCard
                   label="Opciones"
                   value={String(quote.options.length)}
@@ -429,7 +495,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
                     {quote.destinationResolved ?? destination}
                   </Badge>
                   <span className="text-xs text-slate-500 sm:ml-auto">
-                    {passengers} pax · {quote.distance} km
+                    {passengers} pax · {activeDistance} km
                   </span>
                 </div>
               )}
@@ -449,7 +515,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
                     <QuoteOptionCard
                       key={opt.vehiculo.id}
                       option={opt}
-                      distance={quote.distance}
+                      distance={activeDistance}
                       index={index}
                       featured={index === 0}
                       editedPrice={getPrice(opt.vehiculo.id, opt.price)}
@@ -492,7 +558,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
                         </div>
                         <p className="break-words font-semibold text-slate-900">{combo.label}</p>
                         <p className="text-xs text-slate-500">
-                          {combo.totalCapacity} pax · {quote.distance} km
+                          {combo.totalCapacity} pax · {activeDistance} km
                         </p>
                       </article>
                     ))}
@@ -527,11 +593,12 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
           horaViaje={tripTime}
           horaRegreso={returnTime}
           horaLlegadaAprox={arrivalTime}
-          distancia={quote.distance}
+          distancia={activeDistance}
           precioTotal={selectedOption.price}
           precioBaseCalculado={selectedOption.base}
           paradasIntermedias={stops}
           vehiculo={selectedOption.vehiculo}
+          editableSchedule
         />
       )}
     </div>
