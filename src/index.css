@@ -254,6 +254,113 @@ body[data-modal-open='true'] .app-bottom-nav {
   box-shadow: 0 2px 8px rgba(44, 86, 151, 0.12);
 }
 
+.login-logo-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 10.5rem;
+  overflow: hidden;
+  min-height: 2.75rem;
+  padding: 0.2rem 0.4rem;
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .login-logo-box {
+    min-height: 3.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .login-logo-box {
+    min-height: 4rem;
+    max-width: 13.5rem;
+    padding: 0.2rem 0.45rem;
+  }
+}
+
+.login-logo-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 2.25rem;
+  object-fit: contain;
+  object-position: center;
+  transform: scale(1);
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .login-logo-img {
+    min-height: 2.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .login-logo-img {
+    min-height: 3.5rem;
+    transform: scale(1);
+  }
+}
+
+.login-shell {
+  background: #f4f7fb;
+}
+
+.login-hero {
+  background: linear-gradient(145deg, #1a3560 0%, #2c5697 42%, #3d6db5 100%);
+}
+
+.login-hero-glow {
+  background:
+    radial-gradient(ellipse 70% 55% at 15% 20%, rgba(255, 255, 255, 0.14), transparent 55%),
+    radial-gradient(ellipse 50% 45% at 85% 75%, rgba(240, 138, 26, 0.12), transparent 50%);
+}
+
+.login-hero-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(180deg, black 20%, transparent 95%);
+}
+
+.login-form-panel {
+  background:
+    radial-gradient(ellipse 80% 60% at 100% 0%, rgba(44, 86, 151, 0.06), transparent 55%),
+    #f8fafc;
+}
+
+.login-form-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(44, 86, 151, 0.1);
+  border-radius: 1.5rem;
+  box-shadow:
+    0 1px 2px rgba(44, 86, 151, 0.04),
+    0 16px 48px rgba(44, 86, 151, 0.1);
+  padding: 2rem;
+}
+
+@media (min-width: 640px) {
+  .login-form-card {
+    padding: 2.5rem;
+  }
+}
+
+.login-input {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.login-input:focus {
+  box-shadow: 0 0 0 4px rgba(44, 86, 151, 0.1);
+}
+
+.login-submit {
+  margin-top: 0.25rem;
+  letter-spacing: 0.01em;
+}
+
 @media (max-width: 767px) {
   body {
     background: #f8fafc;
@@ -261,5 +368,10 @@ body[data-modal-open='true'] .app-bottom-nav {
 
   body::before {
     display: none;
+  }
+
+  .login-form-card {
+    background: #ffffff;
+    box-shadow: 0 8px 32px rgba(44, 86, 151, 0.08);
   }
 }
