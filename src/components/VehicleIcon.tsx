@@ -7,7 +7,7 @@ interface VehicleIconProps {
   variant?: 'plain' | 'boxed'
 }
 
-const icons = { combi: Van, traffic: Van, bus1: Bus, bus2: BusFront }
+const icons = { combi: Van, bus1: Bus, bus2: BusFront }
 
 const sizes = {
   sm: { box: 'h-8 w-8', icon: 'h-4 w-4' },
@@ -17,7 +17,6 @@ const sizes = {
 
 const typeColors = {
   combi: 'from-primary-muted to-primary/10 text-brand border-primary/20',
-  traffic: 'from-sky-100 to-primary/10 text-brand border-primary/25',
   bus1: 'from-primary/15 to-brand-light/15 text-brand border-primary/25',
   bus2: 'from-brand-dark/10 to-primary/20 text-brand-dark border-brand-dark/20',
 }

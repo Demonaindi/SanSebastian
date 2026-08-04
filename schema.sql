@@ -62,7 +62,7 @@ create table if not exists public.vehiculos (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
   categoria text not null
-    check (categoria in ('Combi', 'Traffic', '1 piso', '2 pisos')),
+    check (categoria in ('Combi', '1 piso', '2 pisos')),
   capacidad integer not null check (capacidad > 0),
   tarifa_km numeric(12, 2) not null check (tarifa_km >= 0),
   estado text not null default 'Disponible'
@@ -461,7 +461,7 @@ grant execute on function public.is_admin to authenticated;
 
 insert into public.vehiculos (nombre, categoria, capacidad, tarifa_km, estado, color, vtv_vencimiento, seguro_vencimiento, matafuegos_vencimiento, kilometraje)
 values
-  ('Renault Trafic', 'Traffic', 19, 1050.00, 'Disponible', '#0ea5e9', current_date + interval '45 days', current_date + interval '20 days', current_date + interval '12 days', 84200),
+  ('Renault Trafic', 'Combi', 19, 1050.00, 'Disponible', '#0ea5e9', current_date + interval '45 days', current_date + interval '20 days', current_date + interval '12 days', 84200),
   ('VW Crafter', 'Combi', 16, 850.00, 'Disponible', '#8b5cf6', current_date + interval '120 days', current_date + interval '90 days', current_date + interval '60 days', 62100),
   ('Ford Transit', 'Combi', 12, 850.00, 'Disponible', '#ec4899', current_date + interval '10 days', current_date + interval '60 days', current_date + interval '5 days', 105400),
   ('Mercedes-Benz O500', '1 piso', 40, 2200.00, 'Disponible', '#14b8a6', current_date + interval '200 days', current_date + interval '150 days', current_date + interval '80 days', 312000),

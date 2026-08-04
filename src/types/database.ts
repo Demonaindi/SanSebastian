@@ -2,12 +2,12 @@ export type UserRole = 'Administrador' | 'Operador'
 
 export type ChoferEstado = 'Disponible' | 'En viaje' | 'Franco' | 'Licencia'
 export type VehiculoEstado = 'Disponible' | 'En viaje'
-export type VehiculoCategoria = 'Combi' | 'Traffic' | '1 piso' | '2 pisos'
+export type VehiculoCategoria = 'Combi' | '1 piso' | '2 pisos'
 export type EstadoPago = 'Pendiente' | 'Señado' | 'Pagado'
 export type EstadoViaje = 'Reservado' | 'Confirmado' | 'Cancelado' | 'Reprogramado' | 'Finalizado'
 export type CajaTipo = 'Ingreso' | 'Egreso'
 
-export type VehicleType = 'combi' | 'traffic' | 'bus1' | 'bus2'
+export type VehicleType = 'combi' | 'bus1' | 'bus2'
 
 export interface Profile {
   id: string

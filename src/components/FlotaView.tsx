@@ -30,8 +30,7 @@ type FilterType = 'all' | VehiculoCategoria
 
 const filters: { id: FilterType; label: string }[] = [
   { id: 'all', label: 'Todos' },
-  { id: 'Combi', label: 'Combis' },
-  { id: 'Traffic', label: 'Traffic' },
+  { id: 'Combi', label: 'Combi / Traffic' },
   { id: '1 piso', label: '1 piso' },
   { id: '2 pisos', label: '2 pisos' },
 ]
@@ -48,7 +47,6 @@ const emptyForm = {
 
 const visualByType: Record<string, string> = {
   combi: 'vehicle-visual-combi',
-  traffic: 'vehicle-visual-traffic',
   bus1: 'vehicle-visual-bus1',
   bus2: 'vehicle-visual-bus2',
 }
@@ -317,8 +315,7 @@ export function FlotaView() {
           </FormField>
           <FormField label="Categoría">
             <select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value as VehiculoCategoria })} className="input-field">
-              <option value="Combi">Combi</option>
-              <option value="Traffic">Traffic</option>
+              <option value="Combi">Combi / Traffic</option>
               <option value="1 piso">Colectivo 1 piso</option>
               <option value="2 pisos">Colectivo 2 pisos</option>
             </select>

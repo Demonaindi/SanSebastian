@@ -2,21 +2,18 @@ import type { TariffRow, VehicleType, Vehiculo, VehiculoCategoria } from '../typ
 
 const CATEGORIA_TO_TYPE: Record<VehiculoCategoria, VehicleType> = {
   Combi: 'combi',
-  Traffic: 'traffic',
   '1 piso': 'bus1',
   '2 pisos': 'bus2',
 }
 
 const TYPE_TO_CATEGORIA: Record<VehicleType, VehiculoCategoria> = {
   combi: 'Combi',
-  traffic: 'Traffic',
   bus1: '1 piso',
   bus2: '2 pisos',
 }
 
 const CATEGORIA_LABELS: Record<VehiculoCategoria, string> = {
-  Combi: 'Combi',
-  Traffic: 'Traffic',
+  Combi: 'Combi / Traffic',
   '1 piso': 'Colectivo 1 piso',
   '2 pisos': 'Colectivo 2 pisos',
 }
@@ -65,10 +62,9 @@ export function formatVehiculoInterno(
 }
 
 export function buildTariffTable(vehiculos: Vehiculo[]): TariffRow[] {
-  const order: VehiculoCategoria[] = ['Combi', 'Traffic', '1 piso', '2 pisos']
+  const order: VehiculoCategoria[] = ['Combi', '1 piso', '2 pisos']
   const hints: Record<VehiculoCategoria, string> = {
-    Combi: '12 a 16 pasajeros',
-    Traffic: '16 a 19 pasajeros',
+    Combi: '12 a 19 pasajeros',
     '1 piso': '28 a 40 pasajeros',
     '2 pisos': '50 a 60 pasajeros',
   }
