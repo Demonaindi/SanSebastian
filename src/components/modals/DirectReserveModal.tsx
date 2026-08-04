@@ -3,7 +3,7 @@ import { UserPlus } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { createCliente } from '../../services/clientes'
 import { confirmarViaje, syncChoferEstado } from '../../services/viajes'
-import { formatVehiculoInterno } from '../../lib/mappers'
+import { formatVehiculoInterno, getVehiculoDocLevel } from '../../lib/mappers'
 import { Button, FormField, Modal } from '../ui'
 
 interface DirectReserveModalProps {
@@ -51,6 +51,12 @@ export function DirectReserveModal({
   }, [open, fechaInicio, fechaFin])
 
   const choferesOpts = useMemo(() => choferes, [choferes])
+
+  const docWarning = useMemo(() => {
+    if (!vehiculo) return null
+    const level = getVehiculoDocLevel(vehiculo)
+    return level === 'ok' ? null : level
+  }, [vehiculo])
 
   const handleCreateCliente = async () => {
     if (!newNombre.trim() || !newTelefono.trim()) {
@@ -147,6 +153,19 @@ export function DirectReserveModal({
         <p className="text-xs text-slate-500">
           Ideal para clubes y servicios especiales no tarifados. El precio es libre.
         </p>
+
+        {docWarning === 'danger' && (
+          <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            Esta unidad tiene documentación o matafuegos vencidos/críticos. Se puede crear el viaje
+            igual; avisá al área operativa antes del servicio.
+          </p>
+        )}
+        {docWarning === 'warning' && (
+          <p className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Documentación próxima a vencer (≤15 días). Se puede reservar igual; revisá VTV, seguro o
+            matafuegos.
+          </p>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Origen *">

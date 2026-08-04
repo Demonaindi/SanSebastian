@@ -12,11 +12,13 @@ import { fetchChoferes } from '../services/choferes'
 import { fetchClientes } from '../services/clientes'
 import { fetchVehiculos } from '../services/vehiculos'
 import { fetchViajes } from '../services/viajes'
+import { fetchViajePagos } from '../services/viajePagos'
 import type {
   CajaMovimiento,
   Chofer,
   Cliente,
   Vehiculo,
+  ViajePago,
   ViajeWithRelations,
 } from '../types/database'
 import { useAuth } from './AuthContext'
@@ -27,6 +29,7 @@ interface DataContextValue {
   clientes: Cliente[]
   viajes: ViajeWithRelations[]
   caja: CajaMovimiento[]
+  viajePagos: ViajePago[]
   loading: boolean
   error: string | null
   refreshAll: () => Promise<void>
@@ -35,6 +38,7 @@ interface DataContextValue {
   refreshClientes: () => Promise<void>
   refreshViajes: () => Promise<void>
   refreshCaja: () => Promise<void>
+  refreshViajePagos: () => Promise<void>
   setVehiculosOptimistic: (updater: (prev: Vehiculo[]) => Vehiculo[]) => void
   setChoferesOptimistic: (updater: (prev: Chofer[]) => Chofer[]) => void
 }
@@ -48,6 +52,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [viajes, setViajes] = useState<ViajeWithRelations[]>([])
   const [caja, setCaja] = useState<CajaMovimiento[]>([])
+  const [viajePagos, setViajePagos] = useState<ViajePago[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -76,6 +81,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setCaja(data)
   }, [])
 
+  const refreshViajePagos = useCallback(async () => {
+    try {
+      const data = await fetchViajePagos()
+      setViajePagos(data)
+    } catch {
+      setViajePagos([])
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -86,13 +100,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
         refreshClientes(),
         refreshViajes(),
         refreshCaja(),
+        refreshViajePagos(),
       ])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar datos')
     } finally {
       setLoading(false)
     }
-  }, [refreshVehiculos, refreshChoferes, refreshClientes, refreshViajes, refreshCaja])
+  }, [
+    refreshVehiculos,
+    refreshChoferes,
+    refreshClientes,
+    refreshViajes,
+    refreshCaja,
+    refreshViajePagos,
+  ])
 
   useEffect(() => {
     if (session) {
@@ -103,6 +125,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setClientes([])
       setViajes([])
       setCaja([])
+      setViajePagos([])
       setLoading(false)
     }
   }, [session, refreshAll])
@@ -114,6 +137,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       clientes,
       viajes,
       caja,
+      viajePagos,
       loading,
       error,
       refreshAll,
@@ -122,6 +146,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       refreshClientes,
       refreshViajes,
       refreshCaja,
+      refreshViajePagos,
       setVehiculosOptimistic: setVehiculos,
       setChoferesOptimistic: setChoferes,
     }),
@@ -131,6 +156,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       clientes,
       viajes,
       caja,
+      viajePagos,
       loading,
       error,
       refreshAll,
@@ -139,6 +165,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       refreshClientes,
       refreshViajes,
       refreshCaja,
+      refreshViajePagos,
     ],
   )
 

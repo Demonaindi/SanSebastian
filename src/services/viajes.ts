@@ -82,8 +82,8 @@ export async function updateViajePago(
   }
   if (opts.estado_pago === 'Pendiente') {
     patch.monto_sena = 0
-  } else if (opts.estado_pago === 'Señado') {
-    const n = Number(opts.monto_sena ?? 0)
+  } else if (opts.monto_sena !== undefined) {
+    const n = Number(opts.monto_sena)
     patch.monto_sena = Number.isFinite(n) && n >= 0 ? n : 0
   }
 
@@ -100,6 +100,18 @@ export async function updateViajePago(
 
 export async function updateViajeEstadoPago(id: string, estado_pago: EstadoPago): Promise<Viaje> {
   return updateViajePago(id, { estado_pago })
+}
+
+export async function updateViajePrecio(id: string, precio_total: number): Promise<Viaje> {
+  const { data, error } = await supabase
+    .from('viajes')
+    .update({ precio_total })
+    .eq('id', id)
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data
 }
 
 export async function updateViajeEstado(id: string, estado_viaje: EstadoViaje): Promise<Viaje> {

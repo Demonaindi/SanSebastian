@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
-import { formatVehiculoInterno, getExpiryLevel, viajeFechaFin } from '../lib/mappers'
+import { formatVehiculoInterno, faltanteAPagar, getExpiryLevel, viajeFechaFin } from '../lib/mappers'
 import { formatCurrency } from '../lib/quote'
 import type { TabId } from './TabBar'
 import { Badge, Card, CardBody, StatCard } from './ui'
@@ -31,7 +31,7 @@ function todayKey(): string {
 
 export function HomeView({ onNavigate }: HomeViewProps) {
   const { profile, isAdmin } = useAuth()
-  const { vehiculos, viajes, clientes, choferes } = useData()
+  const { vehiculos, viajes, clientes, choferes, viajePagos } = useData()
   const firstName = profile?.nombre?.split(' ')[0] ?? 'equipo'
   const today = todayKey()
 
@@ -137,12 +137,15 @@ export function HomeView({ onNavigate }: HomeViewProps) {
       const fin = viajeFechaFin(v.fecha_viaje, v.fecha_hasta)
       return v.fecha_viaje <= today && fin >= today
     })
-    const pendiente = activos
-      .filter((v) => v.estado_pago !== 'Pagado')
-      .reduce((s, v) => s + Number(v.precio_total), 0)
-    const cobrado = activos
-      .filter((v) => v.estado_pago === 'Pagado')
-      .reduce((s, v) => s + Number(v.precio_total), 0)
+    const abonadoByViaje = new Map<string, number>()
+    for (const p of viajePagos) {
+      abonadoByViaje.set(p.viaje_id, (abonadoByViaje.get(p.viaje_id) ?? 0) + Number(p.monto))
+    }
+    const pendiente = activos.reduce((s, v) => {
+      const abonado = abonadoByViaje.get(v.id) ?? 0
+      return s + faltanteAPagar(Number(v.precio_total), abonado)
+    }, 0)
+    const cobrado = activos.reduce((s, v) => s + (abonadoByViaje.get(v.id) ?? 0), 0)
     return {
       viajesHoy: hoy.length,
       unidades: vehiculos.length,
@@ -151,7 +154,7 @@ export function HomeView({ onNavigate }: HomeViewProps) {
       pendiente,
       cobrado,
     }
-  }, [viajes, vehiculos, clientes, choferes, today])
+  }, [viajes, vehiculos, clientes, choferes, viajePagos, today])
 
   const alertsBlock =
     isAdmin && docAlerts.length > 0 ? (
@@ -202,13 +205,13 @@ export function HomeView({ onNavigate }: HomeViewProps) {
         <StatCard label="Viajes hoy" value={String(kpis.viajesHoy)} icon={CalendarDays} tone="info" />
         <StatCard label="Unidades" value={String(kpis.unidades)} icon={Bus} tone="default" />
         <StatCard
-          label="Pendiente cobro"
+          label="Faltante a pagar"
           value={formatCurrency(kpis.pendiente)}
           icon={Wallet}
           tone="warning"
         />
         <StatCard
-          label="Cobrado"
+          label="Cobrado (señas)"
           value={formatCurrency(kpis.cobrado)}
           icon={Wallet}
           tone="success"

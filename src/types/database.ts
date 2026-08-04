@@ -128,6 +128,22 @@ export interface CajaMovimiento {
   created_at: string
 }
 
+export interface ViajePago {
+  id: string
+  viaje_id: string
+  monto: number
+  fecha_pago: string
+  observaciones: string | null
+  created_at: string
+}
+
+export interface NewViajePagoInput {
+  viaje_id: string
+  monto: number
+  fecha_pago?: string
+  observaciones?: string | null
+}
+
 export interface ConfirmarViajePayload {
   origen: string
   destino: string

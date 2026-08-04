@@ -5,7 +5,7 @@ import { useData } from '../../contexts/DataContext'
 import { createCliente } from '../../services/clientes'
 import { confirmarViaje, syncChoferEstado } from '../../services/viajes'
 import { formatCurrency } from '../../lib/quote'
-import { getCategoriaLabel, formatVehiculoInterno, getExpiryLevel } from '../../lib/mappers'
+import { getCategoriaLabel, formatVehiculoInterno, getVehiculoDocLevel } from '../../lib/mappers'
 import type { AdicionalLinea, Vehiculo } from '../../types/database'
 import { Button, FormField, Modal } from '../ui'
 
@@ -92,14 +92,8 @@ export function ConfirmTripModal({
   )
 
   const docWarning = useMemo(() => {
-    const levels = [
-      getExpiryLevel(vehiculo.vtv_vencimiento),
-      getExpiryLevel(vehiculo.seguro_vencimiento),
-      getExpiryLevel(vehiculo.matafuegos_vencimiento),
-    ]
-    if (levels.includes('danger')) return 'danger' as const
-    if (levels.includes('warning')) return 'warning' as const
-    return null
+    const level = getVehiculoDocLevel(vehiculo)
+    return level === 'ok' ? null : level
   }, [vehiculo])
 
   const handleCreateCliente = async () => {
@@ -264,14 +258,15 @@ export function ConfirmTripModal({
         )}
 
         {docWarning === 'danger' && (
-          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            Esta unidad tiene documentación vencida o crítica (≤7 días). Se puede reservar igual; avisá al
-            cliente y planificá la habilitación antes del servicio.
+          <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+            Esta unidad tiene documentación o matafuegos vencidos/críticos. Se puede reservar igual;
+            avisá al área operativa antes del servicio.
           </p>
         )}
         {docWarning === 'warning' && (
           <p className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2 text-xs text-amber-800">
-            Documentación próxima a vencer (≤15 días). Revisá VTV, seguro o matafuegos.
+            Documentación próxima a vencer (≤15 días). Se puede cotizar y reservar igual; revisá VTV,
+            seguro o matafuegos.
           </p>
         )}
 

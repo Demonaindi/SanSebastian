@@ -1,4 +1,4 @@
-import type { TariffRow, VehicleType, Vehiculo, VehiculoCategoria } from '../types/database'
+import type { TariffRow, VehicleType, Vehiculo, VehiculoCategoria, EstadoPago } from '../types/database'
 
 const CATEGORIA_TO_TYPE: Record<VehiculoCategoria, VehicleType> = {
   Combi: 'combi',
@@ -102,6 +102,29 @@ export function getExpiryLevel(dateStr: string | null): ExpiryLevel {
   if (diffDays <= 7) return 'danger'
   if (diffDays <= 15) return 'warning'
   return 'ok'
+}
+
+export function getVehiculoDocLevel(
+  vehiculo: Pick<Vehiculo, 'vtv_vencimiento' | 'seguro_vencimiento' | 'matafuegos_vencimiento'>,
+): ExpiryLevel {
+  const levels = [
+    getExpiryLevel(vehiculo.vtv_vencimiento),
+    getExpiryLevel(vehiculo.seguro_vencimiento),
+    getExpiryLevel(vehiculo.matafuegos_vencimiento),
+  ]
+  if (levels.includes('danger')) return 'danger'
+  if (levels.includes('warning')) return 'warning'
+  return 'ok'
+}
+
+export function deriveEstadoPago(precioTotal: number, abonado: number): EstadoPago {
+  if (abonado <= 0) return 'Pendiente'
+  if (abonado + 0.009 >= precioTotal) return 'Pagado'
+  return 'Señado'
+}
+
+export function faltanteAPagar(precioTotal: number, abonado: number): number {
+  return Math.max(0, Number(precioTotal) - Number(abonado))
 }
 
 export function getDaysUntil(dateStr: string | null): number | null {

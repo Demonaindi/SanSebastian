@@ -4,9 +4,30 @@ import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
 import { formatCurrency } from '../lib/quote'
-import { formatVehiculoInterno, getExpiryLevel, paymentBarColor, viajeFechaFin } from '../lib/mappers'
-import { cancelarViaje, finalizarViaje, reprogramarViaje, syncChoferEstado, updateViajeChofer, updateViajePago } from '../services/viajes'
-import type { EstadoPago, ViajeWithRelations } from '../types/database'
+import {
+  faltanteAPagar,
+  formatVehiculoInterno,
+  deriveEstadoPago,
+  getVehiculoDocLevel,
+  paymentBarColor,
+  viajeFechaFin,
+} from '../lib/mappers'
+import {
+  cancelarViaje,
+  finalizarViaje,
+  reprogramarViaje,
+  syncChoferEstado,
+  updateViajeChofer,
+  updateViajeEstadoPago,
+  updateViajePrecio,
+} from '../services/viajes'
+import {
+  createViajePago,
+  deleteViajePago,
+  sumPagos,
+  syncViajeEstadoDesdePagos,
+} from '../services/viajePagos'
+import type { EstadoPago, ViajePago, ViajeWithRelations } from '../types/database'
 import { DirectReserveModal } from './modals/DirectReserveModal'
 import {
   Badge,
@@ -86,7 +107,8 @@ function formatDayLabel(day: string): string {
 export function AgendaView() {
   const { isAdmin } = useAuth()
   const { toast } = useToast()
-  const { vehiculos, viajes, choferes, loading, error, refreshViajes, refreshAll } = useData()
+  const { vehiculos, viajes, choferes, viajePagos, loading, error, refreshViajes, refreshViajePagos, refreshAll } =
+    useData()
   const [weekStart, setWeekStart] = useState(() => startOfWeek())
   const [daySpan, setDaySpan] = useState(7)
   const [viewMode, setViewMode] = useState<'lista' | 'semana' | 'mes'>('lista')
@@ -101,8 +123,9 @@ export function AgendaView() {
     vehiculo_id: '',
     chofer_id: '',
     estado_pago: 'Pendiente' as EstadoPago,
-    monto_sena: '0',
+    precio_total: '',
   })
+  const [señaForm, setSeñaForm] = useState({ monto: '', fecha_pago: '', observaciones: '' })
   const [busy, setBusy] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -189,16 +212,37 @@ export function AgendaView() {
       vehiculo_id: viaje.vehiculo_id ?? '',
       chofer_id: viaje.chofer_id ?? '',
       estado_pago: viaje.estado_pago,
-      monto_sena: String(Number(viaje.monto_sena ?? 0)),
+      precio_total: String(Number(viaje.precio_total)),
+    })
+    setSeñaForm({
+      monto: '',
+      fecha_pago: toDateKey(new Date()),
+      observaciones: '',
     })
     setActionError('')
   }
+
+  const editingPagos = useMemo(() => {
+    if (!editing) return [] as ViajePago[]
+    return viajePagos.filter((p) => p.viaje_id === editing.id)
+  }, [editing, viajePagos])
+
+  const editingAbonado = useMemo(() => sumPagos(editingPagos), [editingPagos])
+  const editingPrecio = Number(editForm.precio_total) || Number(editing?.precio_total) || 0
+  const editingFaltante = faltanteAPagar(editingPrecio, editingAbonado)
 
   const handleReprogramar = async () => {
     if (!editing || !isAdmin) return
     setBusy(true)
     setActionError('')
     try {
+      const nuevoPrecio = parseFloat(editForm.precio_total)
+      if (Number.isNaN(nuevoPrecio) || nuevoPrecio < 0) {
+        setActionError('Ingresá un precio válido.')
+        setBusy(false)
+        return
+      }
+
       await reprogramarViaje({
         viaje_id: editing.id,
         fecha_viaje: editForm.fecha_viaje,
@@ -207,15 +251,11 @@ export function AgendaView() {
         hora_regreso: editForm.hora_regreso || null,
         vehiculo_id: editForm.vehiculo_id || null,
       })
-      const montoSena = Number(editForm.monto_sena) || 0
-      const pagoChanged =
-        editForm.estado_pago !== editing.estado_pago ||
-        (editForm.estado_pago === 'Señado' && montoSena !== Number(editing.monto_sena ?? 0))
-      if (pagoChanged) {
-        await updateViajePago(editing.id, {
-          estado_pago: editForm.estado_pago,
-          monto_sena: montoSena,
-        })
+      if (nuevoPrecio !== Number(editing.precio_total)) {
+        await updateViajePrecio(editing.id, nuevoPrecio)
+        await syncViajeEstadoDesdePagos(editing.id, nuevoPrecio)
+      } else if (editForm.estado_pago !== editing.estado_pago) {
+        await updateViajeEstadoPago(editing.id, editForm.estado_pago)
       }
       if ((editForm.chofer_id || null) !== (editing.chofer_id || null)) {
         await updateViajeChofer(editing.id, editForm.chofer_id || null)
@@ -276,25 +316,12 @@ export function AgendaView() {
     }
   }
 
-  const handlePagoOnly = async (estado_pago: EstadoPago, monto_sena?: number) => {
+  const handlePagoOnly = async (estado_pago: EstadoPago) => {
     if (!editing || !isAdmin) return
     setBusy(true)
     try {
-      const monto =
-        monto_sena !== undefined
-          ? monto_sena
-          : Number(editForm.monto_sena) || 0
-      await updateViajePago(editing.id, { estado_pago, monto_sena: monto })
-      const nextMonto =
-        estado_pago === 'Pendiente' ? 0 : estado_pago === 'Señado' ? monto : Number(editing.monto_sena ?? 0)
-      setEditForm((f) => ({
-        ...f,
-        estado_pago,
-        monto_sena: String(nextMonto),
-      }))
-      setEditing((prev) =>
-        prev ? { ...prev, estado_pago, monto_sena: nextMonto } : prev,
-      )
+      await updateViajeEstadoPago(editing.id, estado_pago)
+      setEditForm((f) => ({ ...f, estado_pago }))
       await refreshViajes()
       toast({ title: `Pago: ${estado_pago}`, tone: 'success' })
     } catch (err) {
@@ -308,15 +335,66 @@ export function AgendaView() {
     }
   }
 
+  const handleAddSeña = async () => {
+    if (!editing || !isAdmin) return
+    const monto = parseFloat(señaForm.monto)
+    if (Number.isNaN(monto) || monto <= 0) {
+      setActionError('Ingresá un monto de seña válido.')
+      return
+    }
+    setBusy(true)
+    setActionError('')
+    try {
+      await createViajePago({
+        viaje_id: editing.id,
+        monto,
+        fecha_pago: señaForm.fecha_pago || toDateKey(new Date()),
+        observaciones: señaForm.observaciones.trim() || null,
+      })
+      const precio = Number(editForm.precio_total) || Number(editing.precio_total)
+      await syncViajeEstadoDesdePagos(editing.id, precio)
+      setSeñaForm({ monto: '', fecha_pago: toDateKey(new Date()), observaciones: '' })
+      await Promise.all([refreshViajePagos(), refreshViajes()])
+      setEditForm((f) => ({
+        ...f,
+        estado_pago: deriveEstadoPago(precio, editingAbonado + monto),
+      }))
+      toast({ title: 'Seña registrada', tone: 'success' })
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo registrar la seña')
+      toast({ title: 'No se pudo registrar la seña', tone: 'danger' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleDeleteSeña = async (pagoId: string) => {
+    if (!editing || !isAdmin) return
+    setBusy(true)
+    setActionError('')
+    try {
+      await deleteViajePago(pagoId)
+      const precio = Number(editForm.precio_total) || Number(editing.precio_total)
+      await syncViajeEstadoDesdePagos(editing.id, precio)
+      await Promise.all([refreshViajePagos(), refreshViajes()])
+      const nuevoAbonado = Math.max(0, editingAbonado - Number(editingPagos.find((p) => p.id === pagoId)?.monto ?? 0))
+      setEditForm((f) => ({
+        ...f,
+        estado_pago: deriveEstadoPago(precio, nuevoAbonado),
+      }))
+      toast({ title: 'Seña eliminada', tone: 'info' })
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo eliminar la seña')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (loading && vehiculos.length === 0) return <LoadingState message="Cargando agenda..." />
   if (error) return <ErrorState message={error} onRetry={refreshViajes} />
 
   const editingVehicle = vehiculos.find((v) => v.id === (editing?.vehiculo_id ?? editForm.vehiculo_id))
-  const docWarning =
-    editingVehicle &&
-    [editingVehicle.vtv_vencimiento, editingVehicle.seguro_vencimiento, editingVehicle.matafuegos_vencimiento].some(
-      (d) => getExpiryLevel(d) === 'danger',
-    )
+  const docWarning = editingVehicle ? getVehiculoDocLevel(editingVehicle) : 'ok'
 
   return (
     <div className="space-y-5 animate-fade-in md:space-y-6">
@@ -724,32 +802,126 @@ export function AgendaView() {
                   Llegada aproximada: {editing.hora_llegada_aprox.slice(0, 5)}
                 </p>
               )}
-              <p className="mt-2 text-lg font-bold text-brand">
-                {formatCurrency(Number(editing.precio_total))}
-              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Precio</p>
+                  <p className="text-lg font-bold text-brand">{formatCurrency(editingPrecio)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Abonado</p>
+                  <p className="text-lg font-bold text-emerald-700">
+                    {formatCurrency(editingAbonado)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Faltante a pagar</p>
+                  <p className="text-lg font-bold text-amber-700">
+                    {formatCurrency(editingFaltante)}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {docWarning && (
-              <p className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Esta unidad tiene documentación vencida o crítica. Se permite reservar, pero conviene
-                habilitarla antes del servicio.
+            {(docWarning === 'danger' || docWarning === 'warning') && (
+              <p
+                className={`rounded-2xl px-3 py-2 text-xs ${
+                  docWarning === 'danger'
+                    ? 'border border-rose-200 bg-rose-50 text-rose-800'
+                    : 'border border-amber-100 bg-amber-50 text-amber-800'
+                }`}
+              >
+                {docWarning === 'danger'
+                  ? 'Esta unidad tiene documentación o matafuegos vencidos/críticos. Se permite operar igual; conviene habilitarla antes del servicio.'
+                  : 'Documentación próxima a vencer. Se permite operar igual.'}
               </p>
             )}
 
             {isAdmin ? (
               <>
+                <FormField label="Precio total del viaje (ARS)">
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.precio_total}
+                    onChange={(e) => setEditForm({ ...editForm, precio_total: e.target.value })}
+                    className="input-field text-lg font-bold text-brand"
+                  />
+                </FormField>
+
+                <div className="rounded-2xl border border-slate-100 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-slate-900">Señas / pagos parciales</p>
+                  {editingPagos.length === 0 ? (
+                    <p className="text-xs text-slate-500">Todavía no hay señas cargadas.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {editingPagos.map((p) => (
+                        <li
+                          key={p.id}
+                          className="flex items-start justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900">
+                              {formatCurrency(Number(p.monto))}
+                              <span className="ml-2 text-xs font-normal text-slate-500">
+                                {p.fecha_pago}
+                              </span>
+                            </p>
+                            {p.observaciones && (
+                              <p className="mt-0.5 text-xs text-slate-500">{p.observaciones}</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteSeña(p.id)}
+                            className="shrink-0 text-xs font-semibold text-rose-600"
+                            disabled={busy}
+                          >
+                            Quitar
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <FormField label="Monto seña">
+                      <input
+                        type="number"
+                        min={0}
+                        value={señaForm.monto}
+                        onChange={(e) => setSeñaForm({ ...señaForm, monto: e.target.value })}
+                        className="input-field"
+                        placeholder="0"
+                      />
+                    </FormField>
+                    <FormField label="Fecha">
+                      <input
+                        type="date"
+                        value={señaForm.fecha_pago}
+                        onChange={(e) => setSeñaForm({ ...señaForm, fecha_pago: e.target.value })}
+                        className="input-field"
+                      />
+                    </FormField>
+                  </div>
+                  <FormField label="Observaciones">
+                    <input
+                      value={señaForm.observaciones}
+                      onChange={(e) => setSeñaForm({ ...señaForm, observaciones: e.target.value })}
+                      className="input-field"
+                      placeholder="Ej: Transferencia Banco Nación / efectivo"
+                    />
+                  </FormField>
+                  <Button size="sm" onClick={() => void handleAddSeña()} loading={busy}>
+                    Agregar seña
+                  </Button>
+                </div>
+
                 <FormField label="Estado de pago">
                   <select
                     value={editForm.estado_pago}
                     onChange={(e) => {
                       const next = e.target.value as EstadoPago
-                      const nextForm = {
-                        ...editForm,
-                        estado_pago: next,
-                        monto_sena: next === 'Pendiente' ? '0' : editForm.monto_sena,
-                      }
-                      setEditForm(nextForm)
-                      void handlePagoOnly(next, Number(nextForm.monto_sena) || 0)
+                      setEditForm({ ...editForm, estado_pago: next })
+                      void handlePagoOnly(next)
                     }}
                     className="input-field"
                   >
@@ -759,27 +931,10 @@ export function AgendaView() {
                       </option>
                     ))}
                   </select>
-                </FormField>
-                {editForm.estado_pago === 'Señado' && (
-                  <FormField label="Monto señado ($)">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={editForm.monto_sena}
-                      onChange={(e) => setEditForm({ ...editForm, monto_sena: e.target.value })}
-                      onBlur={() => {
-                        void handlePagoOnly('Señado', Number(editForm.monto_sena) || 0)
-                      }}
-                      className="input-field"
-                    />
-                  </FormField>
-                )}
-                {editForm.estado_pago === 'Pagado' && Number(editing.monto_sena ?? 0) > 0 && (
-                  <p className="text-xs text-slate-500">
-                    Seña registrada: {formatCurrency(Number(editing.monto_sena))}
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Se actualiza solo al cargar señas (Pendiente / Señado / Pagado).
                   </p>
-                )}
+                </FormField>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <FormField label="Fecha desde">
                     <input
@@ -852,9 +1007,14 @@ export function AgendaView() {
               <div className="grid gap-2 text-sm text-slate-600">
                 <p>
                   <span className="font-semibold text-slate-800">Pago:</span> {editing.estado_pago}
-                  {editing.estado_pago === 'Señado'
-                    ? ` · seña ${formatCurrency(Number(editing.monto_sena ?? 0))}`
-                    : ''}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-800">Abonado:</span>{' '}
+                  {formatCurrency(editingAbonado)}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-800">Faltante a pagar:</span>{' '}
+                  {formatCurrency(editingFaltante)}
                 </p>
                 <p>
                   <span className="font-semibold text-slate-800">Fechas:</span> {editing.fecha_viaje}

@@ -24,6 +24,7 @@ import {
   formatPresupuestoNumero,
   formatVehiculoInterno,
   getCategoriaLabel,
+  getVehiculoDocLevel,
 } from '../lib/mappers'
 import {
   buildWhatsAppUrl,
@@ -849,6 +850,7 @@ function QuoteOptionCard({
 }) {
   const { vehiculo } = option
   const [sheetOpen, setSheetOpen] = useState(false)
+  const docLevel = getVehiculoDocLevel(vehiculo)
 
   return (
     <article
@@ -866,6 +868,16 @@ function QuoteOptionCard({
             {featured && (
               <Badge variant="info" className="mt-2">
                 Recomendado
+              </Badge>
+            )}
+            {docLevel === 'danger' && (
+              <Badge variant="danger" className="mt-2">
+                Docs vencidos · se puede cotizar
+              </Badge>
+            )}
+            {docLevel === 'warning' && (
+              <Badge variant="warning" className="mt-2">
+                Docs por vencer
               </Badge>
             )}
           </div>
