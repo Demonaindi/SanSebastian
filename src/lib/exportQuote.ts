@@ -2,11 +2,11 @@ import { formatCurrency, formatDurationHours, formatRatePerKm } from './quote'
 import {
   formatPresupuestoNumero,
   formatVehiculoPublico,
-  getRateForVehiculo,
 } from './mappers'
 import {
   CONDICIONES_PAGO_DEFAULT,
   DIAS_VALIDEZ_PRESUPUESTO_DEFAULT,
+  type AdicionalLinea,
   type Presupuesto,
   type Vehiculo,
 } from '../types/database'
@@ -19,6 +19,9 @@ export interface QuoteExportData {
   fechaHasta?: string
   hora?: string
   distancia: number
+  valorKm?: number
+  precioBase?: number
+  adicionales?: AdicionalLinea[]
   duracionMinutos?: number
   vehiculo: Vehiculo
   precioTotal: number
@@ -67,6 +70,13 @@ export function buildWhatsAppUrl(data: QuoteExportData): string {
   const fechaTxt = formatFechaWhatsApp(data.fecha, data.hora, data.fechaHasta)
   const tiempo = formatDurationHours(data.duracionMinutos)
   const unidad = formatVehiculoPublico(data.vehiculo)
+  const adicionales = data.adicionales ?? data.presupuesto?.adicionales ?? []
+  const valorKm = data.valorKm ?? data.presupuesto?.valor_km ?? null
+  const precioBase = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+
+  const adicionalLines = adicionales.map(
+    (a) => `• ${a.nombre}: ${formatCurrency(Number(a.precio))}`,
+  )
 
   const lines = [
     '*San Sebastián — Viajes & Turismo*',
@@ -80,9 +90,14 @@ export function buildWhatsAppUrl(data: QuoteExportData): string {
     data.paradasIntermedias ? `• Paradas / itinerario: ${data.paradasIntermedias}` : '',
     `• Pasajeros: ${data.pasajeros}`,
     fechaTxt ? `• Fechas: ${fechaTxt}` : '',
-    `• Distancia estimada: ${data.distancia} km`,
+    `• Distancia: ${data.distancia} km`,
+    valorKm != null ? `• Valor por km: ${formatRatePerKm(valorKm)}` : '',
+    precioBase != null ? `• Base (km × tarifa): ${formatCurrency(precioBase)}` : '',
     tiempo ? `• Tiempo estimado: ${tiempo}` : '',
     `• Unidad: ${unidad}`,
+    adicionales.length ? '' : null,
+    adicionales.length ? '*ADICIONALES*' : null,
+    ...adicionalLines,
     '',
     '────────────────',
     '*VALOR*',
@@ -97,7 +112,7 @@ export function buildWhatsAppUrl(data: QuoteExportData): string {
     '_Alojamiento y comidas de choferes NO incluidos._',
     '',
     'WhatsApp: 3364493088',
-  ].filter((line) => line !== '')
+  ].filter((line) => line !== '' && line !== null) as string[]
 
   return `https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`
 }
@@ -151,10 +166,15 @@ function buildQuoteHtml(data: QuoteExportData): string {
   const paradasLine = data.paradasIntermedias
     ? `<tr><td>Paradas del itinerario</td><td>${escapeHtml(data.paradasIntermedias)}</td></tr>`
     : ''
-  const baseLine =
-    data.precioBaseCalculado != null && data.precioBaseCalculado !== data.precioTotal
-      ? `<tr><td>Precio calculado (origen→destino)</td><td>${formatCurrency(data.precioBaseCalculado)}</td></tr>`
-      : ''
+  const adicionales = data.adicionales ?? data.presupuesto?.adicionales ?? []
+  const valorKm = data.valorKm ?? data.presupuesto?.valor_km ?? null
+  const precioBase = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+  const adicionalRows = adicionales
+    .map(
+      (a) =>
+        `<tr><td>${escapeHtml(a.nombre)}</td><td>${formatCurrency(Number(a.precio))}</td></tr>`,
+    )
+    .join('')
   const tiempo = formatDurationHours(data.duracionMinutos)
   const unidad = formatVehiculoPublico(data.vehiculo)
 
@@ -185,10 +205,11 @@ function buildQuoteHtml(data: QuoteExportData): string {
     ${paradasLine}
     <tr><td>Pasajeros</td><td>${data.pasajeros}</td></tr>
     ${fechaLine}
-    <tr><td>Distancia origen→destino</td><td>${data.distancia} km${tiempo ? ` (${tiempo})` : ''}</td></tr>
+    <tr><td>Kilómetros</td><td>${data.distancia} km${tiempo ? ` (${tiempo})` : ''}</td></tr>
+    ${valorKm != null ? `<tr><td>Valor por km</td><td>${formatRatePerKm(valorKm)}</td></tr>` : ''}
+    ${precioBase != null ? `<tr><td>Base (km × tarifa)</td><td>${formatCurrency(precioBase)}</td></tr>` : ''}
     <tr><td>Vehículo</td><td>${escapeHtml(unidad)}</td></tr>
-    <tr><td>Tarifa/km</td><td>${formatRatePerKm(getRateForVehiculo(data.vehiculo))}</td></tr>
-    ${baseLine}
+    ${adicionalRows}
   </table>
   <div class="total">Total: ${formatCurrency(data.precioTotal)}</div>
   <div class="box">

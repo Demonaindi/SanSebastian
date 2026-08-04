@@ -18,14 +18,15 @@ export async function fetchVehiculos(): Promise<Vehiculo[]> {
 }
 
 export async function createVehiculo(input: NewVehiculoInput): Promise<Vehiculo> {
+  const interno = input.numero_interno.trim()
   const { data, error } = await supabase
     .from('vehiculos')
     .insert({
-      nombre: input.nombre,
-      numero_interno: input.numero_interno?.trim() || null,
+      nombre: input.nombre?.trim() || `Unidad ${interno}`,
+      numero_interno: interno,
       categoria: input.categoria,
       capacidad: input.capacidad,
-      tarifa_km: input.tarifa_km,
+      tarifa_km: input.tarifa_km ?? 0,
       color: input.color || '#3b82f6',
       vtv_vencimiento: input.vtv_vencimiento ?? null,
       seguro_vencimiento: input.seguro_vencimiento ?? null,

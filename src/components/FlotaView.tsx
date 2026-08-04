@@ -4,18 +4,14 @@ import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
 import {
-  buildTariffTable,
   categoriaToVehicleType,
   formatVehiculoInterno,
   getCategoriaLabel,
   getExpiryLevel,
-  getRateForVehiculo,
   VEHICLE_COLOR_PRESETS,
 } from '../lib/mappers'
-import { formatRatePerKm } from '../lib/quote'
 import { createVehiculo, updateVehiculo } from '../services/vehiculos'
 import type { Vehiculo, VehiculoCategoria } from '../types/database'
-import { TariffTable } from './TariffTable'
 import { VehicleIcon } from './VehicleIcon'
 import {
   Badge,
@@ -41,11 +37,9 @@ const filters: { id: FilterType; label: string }[] = [
 ]
 
 const emptyForm = {
-  nombre: '',
   numero_interno: '',
   categoria: 'Combi' as VehiculoCategoria,
   capacidad: '',
-  tarifa_km: '',
   color: '#3b82f6',
   vtv_vencimiento: '',
   seguro_vencimiento: '',
@@ -70,7 +64,6 @@ export function FlotaView() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
-  const tariffs = useMemo(() => buildTariffTable(vehiculos), [vehiculos])
   const disponibles = vehiculos.filter((v) => v.estado === 'Disponible').length
   const enViaje = vehiculos.filter((v) => v.estado === 'En viaje').length
   const utilization = vehiculos.length ? Math.round((enViaje / vehiculos.length) * 100) : 0
@@ -97,7 +90,6 @@ export function FlotaView() {
       return (
         matchesType &&
         (!q ||
-          v.nombre.toLowerCase().includes(q) ||
           (v.numero_interno ?? '').toLowerCase().includes(q) ||
           getCategoriaLabel(v.categoria).toLowerCase().includes(q))
       )
@@ -114,11 +106,9 @@ export function FlotaView() {
     if (!isAdmin) return
     setEditing(v)
     setForm({
-      nombre: v.nombre,
       numero_interno: v.numero_interno ?? '',
       categoria: v.categoria,
       capacidad: String(v.capacidad),
-      tarifa_km: String(v.tarifa_km),
       color: v.color || '#3b82f6',
       vtv_vencimiento: v.vtv_vencimiento ?? '',
       seguro_vencimiento: v.seguro_vencimiento ?? '',
@@ -128,14 +118,25 @@ export function FlotaView() {
   }
 
   const handleSave = async () => {
+    const interno = form.numero_interno.trim()
+    if (!interno) {
+      toast({ title: 'El Nº interno es obligatorio', tone: 'danger' })
+      return
+    }
+    const capacidad = parseInt(form.capacidad, 10)
+    if (!capacidad || capacidad < 1) {
+      toast({ title: 'Ingresá una capacidad válida', tone: 'danger' })
+      return
+    }
+
     setSaving(true)
     try {
       const payload = {
-        nombre: form.nombre,
-        numero_interno: form.numero_interno.trim() || null,
+        numero_interno: interno,
+        nombre: `Unidad ${interno}`,
         categoria: form.categoria,
-        capacidad: parseInt(form.capacidad, 10),
-        tarifa_km: parseFloat(form.tarifa_km),
+        capacidad,
+        tarifa_km: 0,
         color: form.color,
         vtv_vencimiento: form.vtv_vencimiento || null,
         seguro_vencimiento: form.seguro_vencimiento || null,
@@ -166,7 +167,7 @@ export function FlotaView() {
     <div className="space-y-6 animate-fade-in md:space-y-8">
       <PageHeader
         title="Gestión de Flota"
-        description="Alertas legales: ≤15 días amarillo · ≤7 días o vencido rojo."
+        description="Identificá cada unidad por Nº interno. Alertas: ≤15 días amarillo · ≤7 días o vencido rojo."
         action={
           isAdmin ? (
             <Button onClick={openCreate}>
@@ -184,10 +185,6 @@ export function FlotaView() {
         <StatCard label="Críticos" value={String(alertas.critico)} tone="danger" icon={Shield} trend={`${utilization}% en servicio`} />
       </div>
 
-      <div className="hidden md:block">
-        <TariffTable tariffs={tariffs} />
-      </div>
-
       <div className="space-y-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" strokeWidth={1.75} />
@@ -195,7 +192,7 @@ export function FlotaView() {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar unidad..."
+            placeholder="Buscar por Nº interno..."
             className="input-field input-field-icon"
           />
         </div>
@@ -206,7 +203,6 @@ export function FlotaView() {
         />
       </div>
 
-      {/* Mobile premium cards */}
       <div className="space-y-3 md:hidden">
         {filtered.map((v) => {
           const type = categoriaToVehicleType(v.categoria)
@@ -243,9 +239,6 @@ export function FlotaView() {
                   <div className="flex flex-wrap gap-1">
                     <ExpiryBadge label="VTV" date={v.vtv_vencimiento} compact />
                   </div>
-                  <p className="text-lg font-semibold text-brand">
-                    {formatRatePerKm(getRateForVehiculo(v))}
-                  </p>
                 </div>
               </div>
             </button>
@@ -253,17 +246,14 @@ export function FlotaView() {
         })}
       </div>
 
-      {/* Desktop table */}
       <Card hover={false} className="hidden md:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-primary/10 text-left">
-                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Unidad</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Nº interno</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Categoría</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">Capacidad</th>
-                <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">Tarifa/km</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-center">Docs</th>
                 <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-center">Estado</th>
               </tr>
@@ -279,15 +269,11 @@ export function FlotaView() {
                     <div className="flex items-center gap-3">
                       <span className="h-3 w-3 rounded-full" style={{ backgroundColor: v.color || '#3b82f6' }} />
                       <VehicleIcon type={categoriaToVehicleType(v.categoria)} size="sm" />
-                      <p className="font-semibold text-slate-900">{v.nombre}</p>
+                      <p className="font-semibold text-slate-900">{formatVehiculoInterno(v)}</p>
                     </div>
-                  </td>
-                  <td className="px-5 py-4 font-mono text-slate-700">
-                    {v.numero_interno?.trim() || '—'}
                   </td>
                   <td className="px-5 py-4 text-slate-600">{getCategoriaLabel(v.categoria)}</td>
                   <td className="px-5 py-4 text-right font-mono">{v.capacidad}</td>
-                  <td className="px-5 py-4 text-right font-mono">{formatRatePerKm(getRateForVehiculo(v))}</td>
                   <td className="px-5 py-4">
                     <div className="flex justify-center flex-wrap gap-2">
                       <ExpiryBadge label="VTV" date={v.vtv_vencimiento} />
@@ -310,7 +296,7 @@ export function FlotaView() {
       <Modal
         open={showAdd}
         onClose={() => setShowAdd(false)}
-        title={editing ? 'Editar vehículo' : 'Agregar vehículo'}
+        title={editing ? 'Editar unidad' : 'Agregar unidad'}
         wide
         footer={
           <>
@@ -320,19 +306,15 @@ export function FlotaView() {
         }
       >
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Nombre">
-              <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="input-field" />
-            </FormField>
-            <FormField label="Nº interno">
-              <input
-                value={form.numero_interno}
-                onChange={(e) => setForm({ ...form, numero_interno: e.target.value })}
-                className="input-field"
-                placeholder="Ej: 101"
-              />
-            </FormField>
-          </div>
+          <FormField label="Nº interno">
+            <input
+              value={form.numero_interno}
+              onChange={(e) => setForm({ ...form, numero_interno: e.target.value })}
+              className="input-field"
+              placeholder="Ej: 101"
+              required
+            />
+          </FormField>
           <FormField label="Categoría">
             <select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value as VehiculoCategoria })} className="input-field">
               <option value="Combi">Combi</option>
@@ -341,14 +323,9 @@ export function FlotaView() {
               <option value="2 pisos">Colectivo 2 pisos</option>
             </select>
           </FormField>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Capacidad">
-              <input type="number" value={form.capacidad} onChange={(e) => setForm({ ...form, capacidad: e.target.value })} className="input-field" />
-            </FormField>
-            <FormField label="Tarifa/km (ARS)">
-              <input type="number" value={form.tarifa_km} onChange={(e) => setForm({ ...form, tarifa_km: e.target.value })} className="input-field" />
-            </FormField>
-          </div>
+          <FormField label="Capacidad">
+            <input type="number" value={form.capacidad} onChange={(e) => setForm({ ...form, capacidad: e.target.value })} className="input-field" />
+          </FormField>
           <FormField label="Color fijo">
             <div className="flex flex-wrap items-center gap-2">
               <input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="h-10 w-14 cursor-pointer rounded-xl border border-slate-200" />

@@ -63,6 +63,9 @@ export interface Viaje {
   distancia_km: number
   precio_base_calculado: number | null
   precio_total: number
+  valor_km: number | null
+  precio_base: number | null
+  adicionales: AdicionalLinea[]
   paradas_intermedias: string | null
   estado_pago: EstadoPago
   estado_viaje: EstadoViaje
@@ -78,6 +81,18 @@ export interface ViajeWithRelations extends Viaje {
   vehiculos?: Pick<Vehiculo, 'nombre' | 'numero_interno' | 'categoria' | 'color'> | null
 }
 
+export interface AdicionalCatalogo {
+  id: string
+  nombre: string
+  activo: boolean
+  created_at: string
+}
+
+export interface AdicionalLinea {
+  nombre: string
+  precio: number
+}
+
 export interface Presupuesto {
   id: string
   numero: number
@@ -90,6 +105,9 @@ export interface Presupuesto {
   vehiculo_nombre: string | null
   vehiculo_categoria: string | null
   precio_total: number
+  valor_km: number | null
+  precio_base: number | null
+  adicionales: AdicionalLinea[]
   dias_validez: number
   condiciones_pago: string
   paradas_intermedias: string | null
@@ -118,6 +136,9 @@ export interface ConfirmarViajePayload {
   distancia_km: number
   precio_total: number
   precio_base_calculado?: number | null
+  valor_km?: number | null
+  precio_base?: number | null
+  adicionales?: AdicionalLinea[]
   paradas_intermedias?: string | null
   estado_pago?: EstadoPago
   cliente_id: string
@@ -155,11 +176,11 @@ export interface NewChoferInput {
 }
 
 export interface NewVehiculoInput {
-  nombre: string
-  numero_interno?: string | null
+  nombre?: string
+  numero_interno: string
   categoria: VehiculoCategoria
   capacidad: number
-  tarifa_km: number
+  tarifa_km?: number
   color?: string
   vtv_vencimiento?: string | null
   seguro_vencimiento?: string | null

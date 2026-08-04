@@ -130,13 +130,19 @@ export function buildVisualQuoteMarkup(data: QuoteExportData, bannerSrc: string)
     : ''
   const tiempo = formatDurationHours(data.duracionMinutos)
 
+  const adicionales = data.adicionales ?? data.presupuesto?.adicionales ?? []
+  const valorKm = data.valorKm ?? data.presupuesto?.valor_km ?? null
+  const precioBase = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+
   const servicioItems = [
     `Traslado ida y vuelta ${origen} – ${destino}.`,
     paradas ? `Itinerario / paradas: ${paradas}.` : 'Permanencia durante toda la estadía.',
     `Unidad habilitada para ${data.pasajeros} pasajeros (capacidad ${data.vehiculo.capacidad}).`,
     data.distancia > 0
-      ? `Distancia estimada: ${data.distancia} km${tiempo ? ` · ${tiempo}` : ''}.`
+      ? `Distancia: ${data.distancia} km${tiempo ? ` · ${tiempo}` : ''}${valorKm != null ? ` · ${formatCurrency(valorKm)}/km` : ''}.`
       : null,
+    precioBase != null ? `Base del servicio: ${formatCurrency(precioBase)}.` : null,
+    ...adicionales.map((a) => `${a.nombre}: ${formatCurrency(Number(a.precio))}.`),
     'Incluye combustible, peajes y seguros.',
   ].filter(Boolean) as string[]
 

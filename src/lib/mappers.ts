@@ -53,10 +53,15 @@ export function formatVehiculoPublico(vehiculo: Pick<Vehiculo, 'categoria' | 'ca
 }
 
 export function formatVehiculoInterno(
-  vehiculo: Pick<Vehiculo, 'nombre' | 'numero_interno'>,
+  vehiculo: Pick<Vehiculo, 'nombre' | 'numero_interno'> &
+    Partial<Pick<Vehiculo, 'categoria' | 'capacidad'>>,
 ): string {
   const num = vehiculo.numero_interno?.trim()
-  return num ? `Nº ${num} · ${vehiculo.nombre}` : vehiculo.nombre
+  if (num) return `Nº ${num}`
+  if (vehiculo.categoria) {
+    return `${getCategoriaLabel(vehiculo.categoria)}${vehiculo.capacidad ? ` · ${vehiculo.capacidad} pax` : ''}`
+  }
+  return vehiculo.nombre
 }
 
 export function buildTariffTable(vehiculos: Vehiculo[]): TariffRow[] {

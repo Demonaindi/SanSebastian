@@ -30,10 +30,16 @@ interface CotizacionesViewProps {
 
 function matchVehiculo(presupuesto: Presupuesto, vehiculos: Vehiculo[]): Vehiculo | null {
   if (presupuesto.vehiculo_nombre) {
-    const byName = vehiculos.find(
-      (v) => v.nombre.toLowerCase() === presupuesto.vehiculo_nombre!.toLowerCase(),
-    )
-    if (byName) return byName
+    const label = presupuesto.vehiculo_nombre.toLowerCase()
+    const byInterno = vehiculos.find((v) => {
+      const num = v.numero_interno?.trim()
+      return (
+        (num && `nº ${num}`.toLowerCase() === label) ||
+        (num && num.toLowerCase() === label) ||
+        v.nombre.toLowerCase() === label
+      )
+    })
+    if (byInterno) return byInterno
   }
   if (presupuesto.vehiculo_categoria) {
     const byCat = vehiculos.find((v) => v.categoria === presupuesto.vehiculo_categoria)

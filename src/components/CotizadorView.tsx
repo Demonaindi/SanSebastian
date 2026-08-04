@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -9,21 +9,21 @@ import {
   MapPin,
   MessageCircle,
   MoreHorizontal,
+  Plus,
   Printer,
   Route,
   Sparkles,
+  Trash2,
   Users,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
 import {
-  buildTariffTable,
   categoriaToVehicleType,
   formatPresupuestoNumero,
   formatVehiculoInterno,
   getCategoriaLabel,
-  getRateForVehiculo,
 } from '../lib/mappers'
 import {
   buildWhatsAppUrl,
@@ -37,16 +37,15 @@ import {
   calculateQuote,
   formatCurrency,
   formatDurationHours,
-  formatRatePerKm,
   type QuoteResult,
 } from '../lib/quote'
+import { createAdicional, fetchAdicionales } from '../services/adicionales'
 import { generarPresupuesto } from '../services/presupuestos'
-import type { Vehiculo } from '../types/database'
+import type { AdicionalCatalogo, AdicionalLinea, Vehiculo } from '../types/database'
 import { ConfirmTripModal } from './modals/ConfirmTripModal'
 import { CotizadorSubNav } from './CotizadorSubNav'
 import { RouteMap } from './RouteMap'
 import type { TabId } from './TabBar'
-import { TariffTable } from './TariffTable'
 import { VehicleIcon } from './VehicleIcon'
 import {
   Alert,
@@ -68,6 +67,8 @@ interface CotizadorViewProps {
   onNavigate: (tab: TabId) => void
 }
 
+type AdicionalLineaLocal = AdicionalLinea & { id: string }
+
 export function CotizadorView({ onNavigate }: CotizadorViewProps) {
   const { isAdmin } = useAuth()
   const { toast } = useToast()
@@ -83,7 +84,13 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
   const [returnTime, setReturnTime] = useState('')
   const [quote, setQuote] = useState<QuoteResult | null>(null)
   const [editedDistance, setEditedDistance] = useState('')
-  const [editedPrices, setEditedPrices] = useState<Record<string, number>>({})
+  const [editedRateKm, setEditedRateKm] = useState('')
+  const [adicionalLines, setAdicionalLines] = useState<AdicionalLineaLocal[]>([])
+  const [catalogAdicionales, setCatalogAdicionales] = useState<AdicionalCatalogo[]>([])
+  const [selectedCatalogId, setSelectedCatalogId] = useState('')
+  const [newAdicionalNombre, setNewAdicionalNombre] = useState('')
+  const [newAdicionalPrecio, setNewAdicionalPrecio] = useState('')
+  const [finalPriceOverride, setFinalPriceOverride] = useState<number | null>(null)
   const [formError, setFormError] = useState('')
   const [resultKey, setResultKey] = useState(0)
   const [calculating, setCalculating] = useState(false)
@@ -95,16 +102,67 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
   } | null>(null)
   const [successMsg, setSuccessMsg] = useState('')
   const [exportingId, setExportingId] = useState<string | null>(null)
+  const [creatingAdicional, setCreatingAdicional] = useState(false)
 
-  const tariffs = useMemo(() => buildTariffTable(vehiculos), [vehiculos])
+  useEffect(() => {
+    fetchAdicionales()
+      .then((items) => {
+        setCatalogAdicionales(items)
+        if (items.length > 0) setSelectedCatalogId((prev) => prev || items[0].id)
+      })
+      .catch(() => {})
+  }, [])
+
+  const activeDistance = quote
+    ? parseFloat(editedDistance.replace(',', '.')) || quote.distance
+    : 0
+  const activeRate = parseFloat(editedRateKm.replace(',', '.')) || 0
+  const basePrice = activeDistance * activeRate
+  const adicionalesSum = useMemo(
+    () => adicionalLines.reduce((sum, line) => sum + (Number(line.precio) || 0), 0),
+    [adicionalLines],
+  )
+  const computedTotal = basePrice + adicionalesSum
+  const finalTotal = finalPriceOverride ?? computedTotal
+
+  const adicionalesPayload: AdicionalLinea[] = useMemo(
+    () => adicionalLines.map(({ nombre, precio }) => ({ nombre, precio })),
+    [adicionalLines],
+  )
+
+  const routeMetaFromQuote = (q: QuoteResult) => ({
+    durationMinutes: q.durationMinutes,
+    originResolved: q.originResolved,
+    destinationResolved: q.destinationResolved,
+    originPoint: q.originPoint,
+    destinationPoint: q.destinationPoint,
+    routePath: q.routePath,
+  })
 
   const applyQuoteResult = (result: QuoteResult) => {
     setQuote(result)
     setEditedDistance(String(result.distance))
-    const prices: Record<string, number> = {}
-    for (const opt of result.options) prices[opt.vehiculo.id] = opt.price
-    setEditedPrices(prices)
+    setEditedRateKm('')
+    setFinalPriceOverride(null)
     setResultKey((k) => k + 1)
+  }
+
+  const syncQuote = (distanceRaw: string, rateRaw: string) => {
+    if (!quote) return
+    const nextDistance = parseFloat(distanceRaw.replace(',', '.'))
+    const nextRate = parseFloat(rateRaw.replace(',', '.')) || 0
+    if (!Number.isFinite(nextDistance) || nextDistance <= 0) return
+
+    const pax = parseInt(passengers, 10) || quote.options[0]?.vehiculo.capacidad || 1
+    const result = calculateQuote(
+      pax,
+      vehiculos,
+      nextDistance,
+      nextRate,
+      routeMetaFromQuote(quote),
+    )
+    if (!result) return
+    setQuote(result)
   }
 
   const handleCalculate = async () => {
@@ -128,12 +186,13 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
     setSuccessMsg('')
     setCalculating(true)
     setQuote(null)
-    setEditedPrices({})
     setEditedDistance('')
+    setEditedRateKm('')
+    setFinalPriceOverride(null)
 
     try {
       const route = await getDrivingRouteDistance(origin, destination)
-      const result = calculateQuote(pax, vehiculos, route.distanceKm, {
+      const result = calculateQuote(pax, vehiculos, route.distanceKm, 0, {
         durationMinutes: route.durationMinutes,
         originResolved: route.originResolved,
         destinationResolved: route.destinationResolved,
@@ -155,44 +214,75 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
 
   const handleDistanceChange = (raw: string) => {
     setEditedDistance(raw)
-    if (!quote) return
-    const nextDistance = parseFloat(raw.replace(',', '.'))
-    if (!Number.isFinite(nextDistance) || nextDistance <= 0) return
-
-    const pax = parseInt(passengers, 10) || quote.options[0]?.vehiculo.capacidad || 1
-    const result = calculateQuote(pax, vehiculos, nextDistance, {
-      durationMinutes: quote.durationMinutes,
-      originResolved: quote.originResolved,
-      destinationResolved: quote.destinationResolved,
-      originPoint: quote.originPoint,
-      destinationPoint: quote.destinationPoint,
-      routePath: quote.routePath,
-    })
-    if (!result) return
-
-    setQuote(result)
-    const prices: Record<string, number> = {}
-    for (const opt of result.options) prices[opt.vehiculo.id] = opt.price
-    setEditedPrices(prices)
+    setFinalPriceOverride(null)
+    syncQuote(raw, editedRateKm)
   }
 
-  const getPrice = (vehiculoId: string, base: number) => editedPrices[vehiculoId] ?? base
-  const activeDistance = quote
-    ? parseFloat(editedDistance.replace(',', '.')) || quote.distance
-    : 0
+  const handleRateChange = (raw: string) => {
+    setEditedRateKm(raw)
+    setFinalPriceOverride(null)
+    syncQuote(editedDistance, raw)
+  }
+
+  const handleAddAdicionalLine = () => {
+    const catalog = catalogAdicionales.find((a) => a.id === selectedCatalogId)
+    if (!catalog) {
+      setFormError('Seleccioná un adicional del catálogo.')
+      return
+    }
+    const precio = parseFloat(newAdicionalPrecio.replace(',', '.')) || 0
+    setAdicionalLines((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), nombre: catalog.nombre, precio },
+    ])
+    setNewAdicionalPrecio('')
+    setFinalPriceOverride(null)
+    setFormError('')
+  }
+
+  const handleRemoveAdicionalLine = (id: string) => {
+    setAdicionalLines((prev) => prev.filter((line) => line.id !== id))
+    setFinalPriceOverride(null)
+  }
+
+  const handleCreateCatalogAdicional = async () => {
+    const nombre = newAdicionalNombre.trim()
+    if (!nombre) {
+      setFormError('Ingresá un nombre para el adicional.')
+      return
+    }
+    setCreatingAdicional(true)
+    setFormError('')
+    try {
+      const created = await createAdicional(nombre)
+      setCatalogAdicionales((prev) =>
+        [...prev, created].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+      )
+      setSelectedCatalogId(created.id)
+      setNewAdicionalNombre('')
+      toast({
+        title: 'Adicional creado',
+        message: created.nombre,
+        tone: 'success',
+      })
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'No se pudo crear el adicional')
+    } finally {
+      setCreatingAdicional(false)
+    }
+  }
 
   const openConfirm = (option: { vehiculo: Vehiculo; price: number }) => {
     if (!isAdmin) return
     setSelectedOption({
       vehiculo: option.vehiculo,
-      price: getPrice(option.vehiculo.id, option.price),
-      base: option.price,
+      price: finalTotal,
+      base: basePrice,
     })
     setConfirmOpen(true)
   }
 
-  const buildExportPayload = async (vehiculo: Vehiculo, basePrice: number): Promise<QuoteExportData> => {
-    const precioTotal = getPrice(vehiculo.id, basePrice)
+  const buildExportPayload = async (vehiculo: Vehiculo): Promise<QuoteExportData> => {
     const presupuesto = await generarPresupuesto({
       origen: quote?.originResolved ?? origin,
       destino: quote?.destinationResolved ?? destination,
@@ -200,9 +290,12 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
       fecha_viaje: tripDate || null,
       hora_viaje: tripTime || null,
       distancia_km: activeDistance,
-      vehiculo_nombre: vehiculo.nombre,
+      vehiculo_nombre: formatVehiculoInterno(vehiculo),
       vehiculo_categoria: vehiculo.categoria,
-      precio_total: precioTotal,
+      precio_total: finalTotal,
+      valor_km: activeRate,
+      precio_base: basePrice,
+      adicionales: adicionalesPayload,
       paradas_intermedias: stops.trim() || null,
     })
 
@@ -214,9 +307,12 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
       fechaHasta: tripDateUntil || undefined,
       hora: tripTime || undefined,
       distancia: activeDistance,
+      valorKm: activeRate,
+      precioBase: basePrice,
+      adicionales: adicionalesPayload,
       duracionMinutos: quote?.durationMinutes,
       vehiculo,
-      precioTotal,
+      precioTotal: finalTotal,
       precioBaseCalculado: basePrice,
       paradasIntermedias: stops.trim() || undefined,
       presupuesto,
@@ -225,12 +321,11 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
 
   const handleExport = async (
     vehiculo: Vehiculo,
-    basePrice: number,
     mode: 'pdf' | 'print' | 'wa' | 'image',
   ) => {
     setExportingId(vehiculo.id)
     try {
-      const data = await buildExportPayload(vehiculo, basePrice)
+      const data = await buildExportPayload(vehiculo)
       if (mode === 'pdf') exportQuotePdf(data)
       else if (mode === 'print') printQuote(data)
       else if (mode === 'image') await exportQuoteImage(data)
@@ -269,8 +364,6 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
           {successMsg}
         </Alert>
       )}
-
-      <TariffTable tariffs={tariffs} compact />
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-5 xl:gap-6">
         <div className="min-w-0 xl:col-span-2">
@@ -435,34 +528,7 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
 
           {!calculating && quote && (
             <div key={resultKey} className="min-w-0 space-y-4 md:space-y-6">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-                <div className="card-elevated rounded-xl p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                        Kilómetros
-                      </p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={0.1}
-                          step={0.1}
-                          inputMode="decimal"
-                          value={editedDistance}
-                          onChange={(e) => handleDistanceChange(e.target.value)}
-                          className="input-field max-w-[8.5rem] text-2xl font-bold tracking-tight text-brand"
-                        />
-                        <span className="text-sm font-semibold text-slate-500">km</span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {formatDurationHours(quote.durationMinutes) ?? 'Editable · recalcula precios'}
-                      </p>
-                    </div>
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted text-brand">
-                      <Route className="h-5 w-5" />
-                    </div>
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                 <StatCard
                   label="Opciones"
                   value={String(quote.options.length)}
@@ -496,6 +562,9 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
                   </Badge>
                   <span className="text-xs text-slate-500 sm:ml-auto">
                     {passengers} pax · {activeDistance} km
+                    {formatDurationHours(quote.durationMinutes)
+                      ? ` · ${formatDurationHours(quote.durationMinutes)}`
+                      : ''}
                   </span>
                 </div>
               )}
@@ -506,6 +575,156 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
                 </Alert>
               )}
 
+              <Card hover={false} className="min-w-0">
+                <CardHeader title="Desglose" subtitle="Kilómetros, tarifa y adicionales del viaje" />
+                <CardBody className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <FormField label="Kilómetros">
+                      <input
+                        type="number"
+                        min={0.1}
+                        step={0.1}
+                        inputMode="decimal"
+                        value={editedDistance}
+                        onChange={(e) => handleDistanceChange(e.target.value)}
+                        className="input-field"
+                      />
+                    </FormField>
+                    <FormField label="Valor por km ($)">
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        inputMode="decimal"
+                        value={editedRateKm}
+                        onChange={(e) => handleRateChange(e.target.value)}
+                        placeholder="Ingresá $/km"
+                        className="input-field"
+                      />
+                    </FormField>
+                  </div>
+
+                  <FormField label="Base (km × tarifa)">
+                    <input
+                      type="text"
+                      readOnly
+                      value={formatCurrency(basePrice)}
+                      className="input-field bg-slate-50 text-slate-700"
+                    />
+                  </FormField>
+
+                  <div className="space-y-3 border-t border-primary/10 pt-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Adicionales
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_8rem_auto]">
+                      <FormField label="Del catálogo">
+                        <select
+                          value={selectedCatalogId}
+                          onChange={(e) => setSelectedCatalogId(e.target.value)}
+                          className="input-field"
+                        >
+                          <option value="">Seleccionar...</option>
+                          {catalogAdicionales.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      </FormField>
+                      <FormField label="Precio">
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          inputMode="decimal"
+                          value={newAdicionalPrecio}
+                          onChange={(e) => setNewAdicionalPrecio(e.target.value)}
+                          placeholder="0"
+                          className="input-field"
+                        />
+                      </FormField>
+                      <div className="flex items-end">
+                        <Button type="button" variant="secondary" onClick={handleAddAdicionalLine}>
+                          <Plus className="h-4 w-4" />
+                          Agregar
+                        </Button>
+                      </div>
+                    </div>
+
+                    {adicionalLines.length > 0 && (
+                      <ul className="space-y-2">
+                        {adicionalLines.map((line) => (
+                          <li
+                            key={line.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-primary/10 px-3 py-2"
+                          >
+                            <span className="min-w-0 truncate text-sm font-medium text-slate-800">
+                              {line.nombre}
+                            </span>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-700">
+                                {formatCurrency(line.precio)}
+                              </span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleRemoveAdicionalLine(line.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+                      <FormField label="Nuevo ítem de catálogo">
+                        <input
+                          type="text"
+                          value={newAdicionalNombre}
+                          onChange={(e) => setNewAdicionalNombre(e.target.value)}
+                          placeholder="Nombre del adicional"
+                          className="input-field"
+                        />
+                      </FormField>
+                      <div className="flex items-end">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          loading={creatingAdicional}
+                          onClick={handleCreateCatalogAdicional}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Crear en catálogo
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <FormField label={`Valor final${isAdmin ? ' (editable)' : ''}`}>
+                    {isAdmin ? (
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        inputMode="decimal"
+                        value={finalTotal}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value.replace(',', '.'))
+                          setFinalPriceOverride(Number.isFinite(value) ? value : 0)
+                        }}
+                        className="input-field text-lg font-bold text-brand"
+                      />
+                    ) : (
+                      <p className="text-2xl font-bold text-brand">{formatCurrency(finalTotal)}</p>
+                    )}
+                  </FormField>
+                </CardBody>
+              </Card>
+
               {quote.options.length > 0 && (
                 <div className="min-w-0 space-y-3 md:space-y-4">
                   <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
@@ -514,22 +733,17 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
                   {quote.options.map((opt, index) => (
                     <QuoteOptionCard
                       key={opt.vehiculo.id}
-                      option={opt}
-                      distance={activeDistance}
+                      option={{ ...opt, price: basePrice }}
                       index={index}
                       featured={index === 0}
-                      editedPrice={getPrice(opt.vehiculo.id, opt.price)}
-                      canEditPrice={isAdmin}
+                      finalTotal={finalTotal}
                       exporting={exportingId === opt.vehiculo.id}
-                      onPriceChange={(value) =>
-                        setEditedPrices((prev) => ({ ...prev, [opt.vehiculo.id]: value }))
-                      }
                       onConfirm={() => openConfirm(opt)}
                       canConfirm={isAdmin}
-                      onExportPdf={() => handleExport(opt.vehiculo, opt.price, 'pdf')}
-                      onExportImage={() => handleExport(opt.vehiculo, opt.price, 'image')}
-                      onPrint={() => handleExport(opt.vehiculo, opt.price, 'print')}
-                      onWhatsApp={() => handleExport(opt.vehiculo, opt.price, 'wa')}
+                      onExportPdf={() => handleExport(opt.vehiculo, 'pdf')}
+                      onExportImage={() => handleExport(opt.vehiculo, 'image')}
+                      onPrint={() => handleExport(opt.vehiculo, 'print')}
+                      onWhatsApp={() => handleExport(opt.vehiculo, 'wa')}
                     />
                   ))}
                 </div>
@@ -576,11 +790,11 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
           onClose={() => setConfirmOpen(false)}
           onSuccess={() => {
             setSuccessMsg(
-              `Reserva registrada: ${origin} → ${destination} con ${selectedOption.vehiculo.nombre}.`,
+              `Reserva registrada: ${origin} → ${destination} con ${formatVehiculoInterno(selectedOption.vehiculo)}.`,
             )
             toast({
               title: 'Viaje asignado con éxito',
-              message: `${selectedOption.vehiculo.nombre} · ${origin} → ${destination}`,
+              message: `${formatVehiculoInterno(selectedOption.vehiculo)} · ${origin} → ${destination}`,
               tone: 'success',
             })
             setConfirmOpen(false)
@@ -596,6 +810,9 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
           distancia={activeDistance}
           precioTotal={selectedOption.price}
           precioBaseCalculado={selectedOption.base}
+          valorKm={activeRate}
+          precioBase={basePrice}
+          adicionales={adicionalesPayload}
           paradasIntermedias={stops}
           vehiculo={selectedOption.vehiculo}
           editableSchedule
@@ -607,13 +824,10 @@ export function CotizadorView({ onNavigate }: CotizadorViewProps) {
 
 function QuoteOptionCard({
   option,
-  distance,
   index,
   featured,
-  editedPrice,
-  canEditPrice,
+  finalTotal,
   exporting,
-  onPriceChange,
   onConfirm,
   canConfirm,
   onExportPdf,
@@ -622,13 +836,10 @@ function QuoteOptionCard({
   onWhatsApp,
 }: {
   option: { vehiculo: Vehiculo; price: number }
-  distance: number
   index: number
   featured?: boolean
-  editedPrice: number
-  canEditPrice: boolean
+  finalTotal: number
   exporting: boolean
-  onPriceChange: (value: number) => void
   onConfirm: () => void
   canConfirm: boolean
   onExportPdf: () => void
@@ -636,7 +847,7 @@ function QuoteOptionCard({
   onPrint: () => void
   onWhatsApp: () => void
 }) {
-  const { vehiculo, price } = option
+  const { vehiculo } = option
   const [sheetOpen, setSheetOpen] = useState(false)
 
   return (
@@ -654,50 +865,30 @@ function QuoteOptionCard({
             <p className="truncate text-xs text-slate-500">{getCategoriaLabel(vehiculo.categoria)}</p>
             {featured && (
               <Badge variant="info" className="mt-2">
-                Mejor precio base
+                Recomendado
               </Badge>
             )}
           </div>
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 sm:p-5">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase text-slate-500">Capacidad</p>
               <p className="text-sm font-semibold text-slate-900">{vehiculo.capacidad} pax</p>
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase text-slate-500">Tarifa/km</p>
+              <p className="text-[10px] font-bold uppercase text-slate-500">Categoría</p>
               <p className="truncate text-sm font-semibold text-slate-700">
-                {formatRatePerKm(getRateForVehiculo(vehiculo))}
-              </p>
-            </div>
-            <div className="col-span-2 min-w-0 sm:col-span-1">
-              <p className="text-[10px] font-bold uppercase text-slate-500">Cálculo base</p>
-              <p className="break-words text-xs text-slate-500">
-                {distance} km × {formatRatePerKm(getRateForVehiculo(vehiculo))} ={' '}
-                {formatCurrency(price)}
+                {getCategoriaLabel(vehiculo.categoria)}
               </p>
             </div>
           </div>
 
           <div className="flex min-w-0 flex-col gap-3 border-t border-primary/10 pt-4">
             <div className="min-w-0 w-full">
-              <p className="mb-1 text-[10px] font-bold uppercase text-slate-500">
-                Precio final {canEditPrice ? '(editable)' : '(solo admin)'}
-              </p>
-              {canEditPrice ? (
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="decimal"
-                  value={editedPrice}
-                  onChange={(e) => onPriceChange(parseFloat(e.target.value) || 0)}
-                  className="input-field text-lg font-bold text-brand"
-                />
-              ) : (
-                <p className="text-2xl font-bold text-brand">{formatCurrency(editedPrice)}</p>
-              )}
+              <p className="mb-1 text-[10px] font-bold uppercase text-slate-500">Precio final</p>
+              <p className="text-2xl font-bold text-brand">{formatCurrency(finalTotal)}</p>
             </div>
 
             <div className="hidden flex-wrap gap-2 sm:flex">

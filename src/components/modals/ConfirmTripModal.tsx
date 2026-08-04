@@ -6,7 +6,7 @@ import { createCliente } from '../../services/clientes'
 import { confirmarViaje, syncChoferEstado } from '../../services/viajes'
 import { formatCurrency } from '../../lib/quote'
 import { getCategoriaLabel, formatVehiculoInterno, getExpiryLevel } from '../../lib/mappers'
-import type { Vehiculo } from '../../types/database'
+import type { AdicionalLinea, Vehiculo } from '../../types/database'
 import { Button, FormField, Modal } from '../ui'
 
 interface ConfirmTripModalProps {
@@ -24,6 +24,9 @@ interface ConfirmTripModalProps {
   distancia: number
   precioTotal: number
   precioBaseCalculado: number
+  valorKm?: number
+  precioBase?: number
+  adicionales?: AdicionalLinea[]
   paradasIntermedias: string
   vehiculo: Vehiculo
   editableSchedule?: boolean
@@ -45,6 +48,9 @@ export function ConfirmTripModal({
   distancia,
   precioTotal,
   precioBaseCalculado,
+  valorKm,
+  precioBase,
+  adicionales,
   paradasIntermedias,
   vehiculo,
   editableSchedule = false,
@@ -155,6 +161,9 @@ export function ConfirmTripModal({
         distancia_km: distancia,
         precio_total: precioTotal,
         precio_base_calculado: precioBaseCalculado,
+        valor_km: valorKm ?? null,
+        precio_base: precioBase ?? precioBaseCalculado ?? null,
+        adicionales: adicionales ?? [],
         paradas_intermedias: paradasIntermedias || null,
         cliente_id: clienteId,
         chofer_id: choferId || null,

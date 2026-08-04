@@ -50,6 +50,31 @@ function startOfWeek(dateStr?: string): string {
   return toDateKey(d)
 }
 
+function startOfMonth(dateStr?: string): string {
+  const d = dateStr ? new Date(dateStr + 'T12:00:00') : new Date()
+  d.setDate(1)
+  return toDateKey(d)
+}
+
+function daysInMonth(monthStart: string): number {
+  const d = new Date(monthStart + 'T12:00:00')
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+}
+
+function addMonths(monthStart: string, delta: number): string {
+  const d = new Date(monthStart + 'T12:00:00')
+  d.setMonth(d.getMonth() + delta)
+  d.setDate(1)
+  return toDateKey(d)
+}
+
+function formatMonthLabel(monthStart: string): string {
+  return new Date(monthStart + 'T12:00:00').toLocaleDateString('es-AR', {
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
 function formatDayLabel(day: string): string {
   return new Date(day + 'T12:00:00').toLocaleDateString('es-AR', {
     weekday: 'short',
@@ -64,7 +89,7 @@ export function AgendaView() {
   const { vehiculos, viajes, choferes, loading, error, refreshViajes, refreshAll } = useData()
   const [weekStart, setWeekStart] = useState(() => startOfWeek())
   const [daySpan, setDaySpan] = useState(7)
-  const [mobileMode, setMobileMode] = useState<'lista' | 'semana'>('lista')
+  const [viewMode, setViewMode] = useState<'lista' | 'semana' | 'mes'>('lista')
   const [selectedDay, setSelectedDay] = useState(() => toDateKey(new Date()))
   const [reserve, setReserve] = useState<{ vehiculoId: string; from: string; to: string } | null>(null)
   const [editing, setEditing] = useState<ViajeWithRelations | null>(null)
@@ -82,18 +107,32 @@ export function AgendaView() {
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
+    if (viewMode === 'mes') return
     const mq = window.matchMedia('(max-width: 1023px)')
     const sync = () => setDaySpan(mq.matches ? 7 : 14)
     sync()
     mq.addEventListener('change', sync)
     return () => mq.removeEventListener('change', sync)
-  }, [])
+  }, [viewMode])
+
+  useEffect(() => {
+    if (viewMode === 'mes') {
+      const month = startOfMonth(selectedDay)
+      setWeekStart(month)
+      setDaySpan(daysInMonth(month))
+    } else if (viewMode === 'semana') {
+      setWeekStart(startOfWeek(selectedDay))
+      setDaySpan(7)
+    }
+  }, [viewMode])
 
   const days = useMemo(
     () => Array.from({ length: daySpan }, (_, i) => addDays(weekStart, i)),
     [weekStart, daySpan],
   )
   const weekEnd = days[days.length - 1]
+  const isMonthView = viewMode === 'mes'
+  const colMin = isMonthView ? '28px' : '72px'
 
   const activeViajes = useMemo(
     () =>
@@ -277,8 +316,15 @@ export function AgendaView() {
           variant="secondary"
           size="sm"
           onClick={() => {
-            setWeekStart(addDays(weekStart, -daySpan))
-            setSelectedDay(addDays(selectedDay, -1))
+            if (isMonthView) {
+              const prev = addMonths(weekStart, -1)
+              setWeekStart(prev)
+              setDaySpan(daysInMonth(prev))
+              setSelectedDay(prev)
+            } else {
+              setWeekStart(addDays(weekStart, -daySpan))
+              setSelectedDay(addDays(selectedDay, -1))
+            }
           }}
         >
           <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
@@ -288,8 +334,14 @@ export function AgendaView() {
           size="sm"
           onClick={() => {
             const today = toDateKey(new Date())
-            setWeekStart(startOfWeek(today))
             setSelectedDay(today)
+            if (isMonthView) {
+              const month = startOfMonth(today)
+              setWeekStart(month)
+              setDaySpan(daysInMonth(month))
+            } else {
+              setWeekStart(startOfWeek(today))
+            }
           }}
         >
           Hoy
@@ -298,14 +350,23 @@ export function AgendaView() {
           variant="secondary"
           size="sm"
           onClick={() => {
-            setWeekStart(addDays(weekStart, daySpan))
-            setSelectedDay(addDays(selectedDay, 1))
+            if (isMonthView) {
+              const next = addMonths(weekStart, 1)
+              setWeekStart(next)
+              setDaySpan(daysInMonth(next))
+              setSelectedDay(next)
+            } else {
+              setWeekStart(addDays(weekStart, daySpan))
+              setSelectedDay(addDays(selectedDay, 1))
+            }
           }}
         >
           <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
         </Button>
-        <p className="text-sm font-semibold text-slate-900">
-          {formatDayLabel(weekStart)} — {formatDayLabel(weekEnd)}
+        <p className="text-sm font-semibold capitalize text-slate-900">
+          {isMonthView
+            ? formatMonthLabel(weekStart)
+            : `${formatDayLabel(weekStart)} — ${formatDayLabel(weekEnd)}`}
         </p>
         <div className="ml-auto flex flex-wrap gap-2">
           <Badge variant="warning" dot>
@@ -320,29 +381,38 @@ export function AgendaView() {
         </div>
       </div>
 
-      <div className="flex gap-2 lg:hidden">
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => setMobileMode('lista')}
-          className={`tap-press flex-1 rounded-2xl border px-3 py-2 text-xs font-semibold ${
-            mobileMode === 'lista' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
+          onClick={() => setViewMode('lista')}
+          className={`tap-press rounded-2xl border px-3 py-2 text-xs font-semibold lg:hidden ${
+            viewMode === 'lista' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
           }`}
         >
           Lista del día
         </button>
         <button
           type="button"
-          onClick={() => setMobileMode('semana')}
-          className={`tap-press flex-1 rounded-2xl border px-3 py-2 text-xs font-semibold ${
-            mobileMode === 'semana' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
+          onClick={() => setViewMode('semana')}
+          className={`tap-press rounded-2xl border px-3 py-2 text-xs font-semibold ${
+            viewMode === 'semana' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
           }`}
         >
-          Semana (7 días)
+          Semana
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode('mes')}
+          className={`tap-press rounded-2xl border px-3 py-2 text-xs font-semibold ${
+            viewMode === 'mes' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
+          }`}
+        >
+          Mes completo
         </button>
       </div>
 
       {/* Mobile day list */}
-      <div className={`space-y-3 ${mobileMode === 'lista' ? 'lg:hidden' : 'hidden'}`}>
+      <div className={`space-y-3 ${viewMode === 'lista' ? 'lg:hidden' : 'hidden'}`}>
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar">
           {days.map((day) => {
             const active = day === selectedDay
@@ -444,16 +514,20 @@ export function AgendaView() {
         )}
       </div>
 
-      {/* Timeline: mobile week + desktop */}
+      {/* Timeline: semana / mes */}
       <Card
         hover={false}
-        className={`overflow-hidden ${mobileMode === 'semana' ? 'block' : 'hidden lg:block'}`}
+        className={`overflow-hidden ${
+          viewMode === 'semana' || viewMode === 'mes' ? 'block' : 'hidden lg:block'
+        }`}
       >
         <div className="overflow-x-auto">
-          <div className="min-w-[720px] lg:min-w-[980px]">
+          <div
+            className={isMonthView ? 'min-w-[980px]' : 'min-w-[720px] lg:min-w-[980px]'}
+          >
             <div
               className="grid border-b border-slate-100 bg-slate-50"
-              style={{ gridTemplateColumns: `160px repeat(${days.length}, minmax(72px, 1fr))` }}
+              style={{ gridTemplateColumns: `140px repeat(${days.length}, minmax(${colMin}, 1fr))` }}
             >
               <div className="sticky left-0 z-20 bg-slate-50 px-3 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 Unidad
@@ -462,11 +536,13 @@ export function AgendaView() {
                 const d = new Date(day + 'T12:00:00')
                 const isToday = day === toDateKey(new Date())
                 return (
-                  <div key={day} className={`px-1 py-3 text-center ${isToday ? 'bg-primary/10' : ''}`}>
-                    <p className="text-[10px] font-bold uppercase text-slate-500">
-                      {d.toLocaleDateString('es-AR', { weekday: 'short' })}
-                    </p>
-                    <p className={`text-sm font-semibold ${isToday ? 'text-brand' : 'text-slate-800'}`}>
+                  <div key={day} className={`px-0.5 py-2 text-center ${isToday ? 'bg-primary/10' : ''}`}>
+                    {!isMonthView && (
+                      <p className="text-[10px] font-bold uppercase text-slate-500">
+                        {d.toLocaleDateString('es-AR', { weekday: 'short' })}
+                      </p>
+                    )}
+                    <p className={`text-xs font-semibold ${isToday ? 'text-brand' : 'text-slate-800'} ${isMonthView ? 'text-[11px]' : 'text-sm'}`}>
                       {d.getDate()}
                     </p>
                   </div>
@@ -480,7 +556,7 @@ export function AgendaView() {
                 <div
                   key={vehiculo.id}
                   className="grid border-b border-slate-50"
-                  style={{ gridTemplateColumns: `160px repeat(${days.length}, minmax(72px, 1fr))` }}
+                  style={{ gridTemplateColumns: `140px repeat(${days.length}, minmax(${colMin}, 1fr))` }}
                 >
                   <div className="sticky left-0 z-20 flex items-center gap-2 border-r border-slate-100 bg-white px-3 py-3">
                     <span
@@ -504,9 +580,9 @@ export function AgendaView() {
                       onKeyDown={(e) => {
                         if (isAdmin && (e.key === 'Enter' || e.key === ' ')) openReserve(vehiculo.id, day)
                       }}
-                      className={`relative min-h-[56px] border-l border-slate-50 ${
+                      className={`relative min-h-[48px] border-l border-slate-50 ${
                         isAdmin ? 'cursor-pointer hover:bg-primary/5' : ''
-                      }`}
+                      } ${isMonthView ? 'min-h-[40px]' : 'min-h-[56px]'}`}
                     >
                       {bars
                         .filter((b) => b.startIdx === dayIdx)
@@ -525,18 +601,22 @@ export function AgendaView() {
                                 openDetail(viaje)
                               }
                             }}
-                            className="absolute top-1.5 bottom-1.5 z-10 overflow-hidden rounded-lg px-2 py-1 text-left text-[10px] font-semibold text-white"
+                            className={`absolute top-1 bottom-1 z-10 overflow-hidden rounded-md text-left font-semibold text-white ${
+                              isMonthView ? 'px-0.5 py-0.5 text-[9px]' : 'top-1.5 bottom-1.5 rounded-lg px-2 py-1 text-[10px]'
+                            }`}
                             style={{
-                              left: 3,
-                              width: `calc(${span * 100}% - 6px)`,
+                              left: 2,
+                              width: `calc(${span * 100}% - 4px)`,
                               backgroundColor: paymentBarColor(viaje.estado_pago),
                               borderLeft: `3px solid ${vehiculo.color || '#fff'}`,
                             }}
                             title={`${viaje.origen} → ${viaje.destino}`}
                           >
-                            <span className="block truncate">
-                              {viaje.origen} → {viaje.destino}
-                            </span>
+                            {!isMonthView && (
+                              <span className="block truncate">
+                                {viaje.origen} → {viaje.destino}
+                              </span>
+                            )}
                           </div>
                         ))}
                     </div>
@@ -546,7 +626,6 @@ export function AgendaView() {
             })}
           </div>
         </div>
-
         {vehiculos.length === 0 && (
           <CardBody className="py-12 text-center text-slate-500">No hay unidades cargadas.</CardBody>
         )}
@@ -692,7 +771,7 @@ export function AgendaView() {
                   >
                     {vehiculos.map((v) => (
                       <option key={v.id} value={v.id}>
-                        {v.nombre}
+                        {formatVehiculoInterno(v)}
                       </option>
                     ))}
                   </select>

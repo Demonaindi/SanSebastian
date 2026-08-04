@@ -1,5 +1,6 @@
 import type { Vehiculo } from '../types/database'
-import { getRateForVehiculo } from '../lib/mappers'
+import { getCategoriaLabel } from '../lib/mappers'
+import type { MapPoint } from './routing'
 
 export interface QuoteOption {
   vehiculo: Vehiculo
@@ -12,8 +13,6 @@ export interface CombinationOption {
   totalCapacity: number
   price: number
 }
-
-import type { MapPoint } from './routing'
 
 export interface QuoteResult {
   distance: number
@@ -49,7 +48,10 @@ export function formatDurationHours(minutes?: number | null): string | undefined
 function buildCombinationLabel(vehiculos: Vehiculo[]): string {
   const counts = new Map<string, number>()
   for (const v of vehiculos) {
-    counts.set(v.nombre, (counts.get(v.nombre) ?? 0) + 1)
+    const key = v.numero_interno?.trim()
+      ? `Nº ${v.numero_interno.trim()}`
+      : getCategoriaLabel(v.categoria)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return Array.from(counts.entries())
     .map(([name, count]) => (count > 1 ? `${count} × ${name}` : name))
@@ -59,6 +61,7 @@ function buildCombinationLabel(vehiculos: Vehiculo[]): string {
 function findCombinations(
   passengers: number,
   distance: number,
+  ratePerKm: number,
   vehiculos: Vehiculo[],
 ): CombinationOption[] {
   const available = vehiculos
@@ -67,6 +70,7 @@ function findCombinations(
 
   const combos: CombinationOption[] = []
   const seen = new Set<string>()
+  const unitPrice = distance * ratePerKm
 
   for (let i = 0; i < available.length; i++) {
     for (let j = i; j < available.length; j++) {
@@ -82,7 +86,7 @@ function findCombinations(
         label: buildCombinationLabel(pair),
         vehiculos: pair,
         totalCapacity,
-        price: distance * pair.reduce((sum, v) => sum + getRateForVehiculo(v), 0),
+        price: unitPrice * 2,
       })
     }
   }
@@ -99,10 +103,10 @@ function findCombinations(
     seen.add(key)
 
     combos.push({
-      label: `${count} × ${v.nombre}`,
+      label: `${count} × ${v.numero_interno?.trim() ? `Nº ${v.numero_interno.trim()}` : getCategoriaLabel(v.categoria)}`,
       vehiculos: Array.from({ length: count }, () => v),
       totalCapacity,
-      price: distance * getRateForVehiculo(v) * count,
+      price: unitPrice * count,
     })
   }
 
@@ -113,24 +117,28 @@ export function calculateQuote(
   passengers: number,
   vehiculos: Vehiculo[],
   distance: number,
+  ratePerKm: number,
   routeMeta?: Pick<
     QuoteResult,
     'durationMinutes' | 'originResolved' | 'destinationResolved' | 'originPoint' | 'destinationPoint' | 'routePath'
   >,
 ): QuoteResult | null {
-  if (passengers < 1 || vehiculos.length === 0 || distance <= 0) {
+  if (passengers < 1 || vehiculos.length === 0 || distance <= 0 || ratePerKm < 0) {
     return null
   }
+
+  const basePrice = distance * ratePerKm
 
   const options = vehiculos
     .filter((v) => v.capacidad >= passengers)
     .map((vehiculo) => ({
       vehiculo,
-      price: distance * getRateForVehiculo(vehiculo),
+      price: basePrice,
     }))
-    .sort((a, b) => a.price - b.price)
+    .sort((a, b) => a.vehiculo.capacidad - b.vehiculo.capacidad)
 
-  const combinations = options.length === 0 ? findCombinations(passengers, distance, vehiculos) : []
+  const combinations =
+    options.length === 0 ? findCombinations(passengers, distance, ratePerKm, vehiculos) : []
 
   return {
     distance,

@@ -45,6 +45,9 @@ export async function confirmarViaje(payload: ConfirmarViajePayload): Promise<st
     p_paradas_intermedias: payload.paradas_intermedias ?? null,
     p_precio_base_calculado: payload.precio_base_calculado ?? null,
     p_estado_pago: payload.estado_pago ?? 'Pendiente',
+    p_valor_km: payload.valor_km ?? null,
+    p_precio_base: payload.precio_base ?? payload.precio_base_calculado ?? null,
+    p_adicionales: payload.adicionales ?? [],
   })
 
   if (error) throw error
