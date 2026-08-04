@@ -118,7 +118,7 @@ export function viajeFechaFin(fechaViaje: string, fechaHasta: string | null): st
 
 export function paymentBarColor(estadoPago: string): string {
   if (estadoPago === 'Pagado') return '#22c55e'
-  if (estadoPago === 'Señado') return '#f97316'
+  if (estadoPago === 'Señado') return '#2563eb'
   return '#eab308'
 }
 

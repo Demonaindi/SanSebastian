@@ -53,6 +53,9 @@ create table if not exists public.choferes (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
   licencia_categoria text not null default 'D1',
+  dni text,
+  carnet_conducir_vencimiento date,
+  libreta_trabajo_vencimiento date,
   estado text not null default 'Disponible'
     check (estado in ('Disponible', 'En viaje', 'Franco', 'Licencia')),
   created_at timestamptz not null default now()
@@ -94,6 +97,7 @@ create table if not exists public.viajes (
   paradas_intermedias text,
   estado_pago text not null default 'Pendiente'
     check (estado_pago in ('Pendiente', 'Señado', 'Pagado')),
+  monto_sena numeric(14, 2) not null default 0 check (monto_sena >= 0),
   estado_viaje text not null default 'Reservado'
     check (estado_viaje in ('Reservado', 'Confirmado', 'Cancelado', 'Reprogramado', 'Finalizado')),
   cliente_id uuid references public.clientes (id) on delete set null,

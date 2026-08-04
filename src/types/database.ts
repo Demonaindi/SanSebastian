@@ -30,6 +30,9 @@ export interface Chofer {
   id: string
   nombre: string
   licencia_categoria: string
+  dni: string | null
+  carnet_conducir_vencimiento: string | null
+  libreta_trabajo_vencimiento: string | null
   estado: ChoferEstado
   created_at: string
 }
@@ -68,6 +71,7 @@ export interface Viaje {
   adicionales: AdicionalLinea[]
   paradas_intermedias: string | null
   estado_pago: EstadoPago
+  monto_sena: number
   estado_viaje: EstadoViaje
   cliente_id: string | null
   chofer_id: string | null
@@ -171,7 +175,10 @@ export interface NewClienteInput {
 
 export interface NewChoferInput {
   nombre: string
-  licencia_categoria: string
+  dni?: string | null
+  carnet_conducir_vencimiento?: string | null
+  libreta_trabajo_vencimiento?: string | null
+  licencia_categoria?: string
   estado?: ChoferEstado
 }
 

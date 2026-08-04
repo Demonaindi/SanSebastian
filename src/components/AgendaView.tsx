@@ -5,7 +5,7 @@ import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
 import { formatCurrency } from '../lib/quote'
 import { formatVehiculoInterno, getExpiryLevel, paymentBarColor, viajeFechaFin } from '../lib/mappers'
-import { cancelarViaje, finalizarViaje, reprogramarViaje, syncChoferEstado, updateViajeChofer, updateViajeEstadoPago } from '../services/viajes'
+import { cancelarViaje, finalizarViaje, reprogramarViaje, syncChoferEstado, updateViajeChofer, updateViajePago } from '../services/viajes'
 import type { EstadoPago, ViajeWithRelations } from '../types/database'
 import { DirectReserveModal } from './modals/DirectReserveModal'
 import {
@@ -101,6 +101,7 @@ export function AgendaView() {
     vehiculo_id: '',
     chofer_id: '',
     estado_pago: 'Pendiente' as EstadoPago,
+    monto_sena: '0',
   })
   const [busy, setBusy] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -188,6 +189,7 @@ export function AgendaView() {
       vehiculo_id: viaje.vehiculo_id ?? '',
       chofer_id: viaje.chofer_id ?? '',
       estado_pago: viaje.estado_pago,
+      monto_sena: String(Number(viaje.monto_sena ?? 0)),
     })
     setActionError('')
   }
@@ -205,8 +207,15 @@ export function AgendaView() {
         hora_regreso: editForm.hora_regreso || null,
         vehiculo_id: editForm.vehiculo_id || null,
       })
-      if (editForm.estado_pago !== editing.estado_pago) {
-        await updateViajeEstadoPago(editing.id, editForm.estado_pago)
+      const montoSena = Number(editForm.monto_sena) || 0
+      const pagoChanged =
+        editForm.estado_pago !== editing.estado_pago ||
+        (editForm.estado_pago === 'Señado' && montoSena !== Number(editing.monto_sena ?? 0))
+      if (pagoChanged) {
+        await updateViajePago(editing.id, {
+          estado_pago: editForm.estado_pago,
+          monto_sena: montoSena,
+        })
       }
       if ((editForm.chofer_id || null) !== (editing.chofer_id || null)) {
         await updateViajeChofer(editing.id, editForm.chofer_id || null)
@@ -267,12 +276,25 @@ export function AgendaView() {
     }
   }
 
-  const handlePagoOnly = async (estado_pago: EstadoPago) => {
+  const handlePagoOnly = async (estado_pago: EstadoPago, monto_sena?: number) => {
     if (!editing || !isAdmin) return
     setBusy(true)
     try {
-      await updateViajeEstadoPago(editing.id, estado_pago)
-      setEditForm((f) => ({ ...f, estado_pago }))
+      const monto =
+        monto_sena !== undefined
+          ? monto_sena
+          : Number(editForm.monto_sena) || 0
+      await updateViajePago(editing.id, { estado_pago, monto_sena: monto })
+      const nextMonto =
+        estado_pago === 'Pendiente' ? 0 : estado_pago === 'Señado' ? monto : Number(editing.monto_sena ?? 0)
+      setEditForm((f) => ({
+        ...f,
+        estado_pago,
+        monto_sena: String(nextMonto),
+      }))
+      setEditing((prev) =>
+        prev ? { ...prev, estado_pago, monto_sena: nextMonto } : prev,
+      )
       await refreshViajes()
       toast({ title: `Pago: ${estado_pago}`, tone: 'success' })
     } catch (err) {
@@ -300,7 +322,7 @@ export function AgendaView() {
     <div className="space-y-5 animate-fade-in md:space-y-6">
       <PageHeader
         title="Agenda de unidades"
-        description="Disponibilidad por vehículo. Amarillo = Pendiente · Naranja = Señado · Verde = Pagado."
+        description="Disponibilidad por vehículo. Amarillo = Pendiente · Azul = Señado · Verde = Pagado."
         action={
           isAdmin ? (
             <Button onClick={() => vehiculos[0] && openReserve(vehiculos[0].id, toDateKey(new Date()))}>
@@ -372,7 +394,7 @@ export function AgendaView() {
           <Badge variant="warning" dot>
             Pendiente
           </Badge>
-          <Badge variant="warning" className="!bg-orange-50 !text-orange-700 !border-orange-100" dot>
+          <Badge variant="info" className="!bg-blue-50 !text-blue-700 !border-blue-100" dot>
             Señado
           </Badge>
           <Badge variant="success" dot>
@@ -481,8 +503,13 @@ export function AgendaView() {
                         viaje.estado_pago === 'Pagado'
                           ? 'success'
                           : viaje.estado_pago === 'Señado'
-                            ? 'warning'
+                            ? 'info'
                             : 'warning'
+                      }
+                      className={
+                        viaje.estado_pago === 'Señado'
+                          ? '!bg-blue-50 !text-blue-700 !border-blue-100'
+                          : undefined
                       }
                     >
                       {viaje.estado_pago}
@@ -716,8 +743,13 @@ export function AgendaView() {
                     value={editForm.estado_pago}
                     onChange={(e) => {
                       const next = e.target.value as EstadoPago
-                      setEditForm({ ...editForm, estado_pago: next })
-                      void handlePagoOnly(next)
+                      const nextForm = {
+                        ...editForm,
+                        estado_pago: next,
+                        monto_sena: next === 'Pendiente' ? '0' : editForm.monto_sena,
+                      }
+                      setEditForm(nextForm)
+                      void handlePagoOnly(next, Number(nextForm.monto_sena) || 0)
                     }}
                     className="input-field"
                   >
@@ -728,6 +760,26 @@ export function AgendaView() {
                     ))}
                   </select>
                 </FormField>
+                {editForm.estado_pago === 'Señado' && (
+                  <FormField label="Monto señado ($)">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={editForm.monto_sena}
+                      onChange={(e) => setEditForm({ ...editForm, monto_sena: e.target.value })}
+                      onBlur={() => {
+                        void handlePagoOnly('Señado', Number(editForm.monto_sena) || 0)
+                      }}
+                      className="input-field"
+                    />
+                  </FormField>
+                )}
+                {editForm.estado_pago === 'Pagado' && Number(editing.monto_sena ?? 0) > 0 && (
+                  <p className="text-xs text-slate-500">
+                    Seña registrada: {formatCurrency(Number(editing.monto_sena))}
+                  </p>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <FormField label="Fecha desde">
                     <input
@@ -800,6 +852,9 @@ export function AgendaView() {
               <div className="grid gap-2 text-sm text-slate-600">
                 <p>
                   <span className="font-semibold text-slate-800">Pago:</span> {editing.estado_pago}
+                  {editing.estado_pago === 'Señado'
+                    ? ` · seña ${formatCurrency(Number(editing.monto_sena ?? 0))}`
+                    : ''}
                 </p>
                 <p>
                   <span className="font-semibold text-slate-800">Fechas:</span> {editing.fecha_viaje}

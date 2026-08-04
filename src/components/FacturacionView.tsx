@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
 import { createCajaMovimiento } from '../services/caja'
-import { updateViajeEstadoPago } from '../services/viajes'
+import { updateViajePago } from '../services/viajes'
 import { formatCurrency } from '../lib/quote'
 import type { CajaTipo, EstadoPago } from '../types/database'
 import {
@@ -29,6 +29,8 @@ export function FacturacionView() {
   const [form, setForm] = useState({ tipo: 'Egreso' as CajaTipo, concepto: '', monto: '' })
   const [saving, setSaving] = useState(false)
 
+  const [senaDrafts, setSenaDrafts] = useState<Record<string, string>>({})
+
   const totales = useMemo(() => {
     const ingresos = caja.filter((m) => m.tipo === 'Ingreso').reduce((s, m) => s + Number(m.monto), 0)
     const egresos = caja.filter((m) => m.tipo === 'Egreso').reduce((s, m) => s + Number(m.monto), 0)
@@ -41,10 +43,20 @@ export function FacturacionView() {
     return { ingresos, egresos, saldo: ingresos - egresos, cobrado, pendiente }
   }, [caja, viajes])
 
-  const handlePagoChange = async (id: string, estado_pago: EstadoPago) => {
+  const handlePagoChange = async (id: string, estado_pago: EstadoPago, monto_sena?: number) => {
     if (!isAdmin && estado_pago === 'Pagado') return
     try {
-      await updateViajeEstadoPago(id, estado_pago)
+      await updateViajePago(id, {
+        estado_pago,
+        monto_sena: monto_sena ?? (Number(senaDrafts[id] ?? 0) || 0),
+      })
+      if (estado_pago === 'Pendiente') {
+        setSenaDrafts((d) => {
+          const next = { ...d }
+          delete next[id]
+          return next
+        })
+      }
       await refreshViajes()
       toast({ title: `Pago: ${estado_pago}`, tone: 'success' })
     } catch (err) {
@@ -55,6 +67,9 @@ export function FacturacionView() {
       })
     }
   }
+
+  const senaValue = (id: string, current: number) =>
+    senaDrafts[id] !== undefined ? senaDrafts[id] : String(Number(current ?? 0))
 
   const handleCajaSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -139,28 +154,50 @@ export function FacturacionView() {
                 </p>
               </div>
               {isAdmin ? (
-                <select
-                  value={v.estado_pago}
-                  onChange={(e) => handlePagoChange(v.id, e.target.value as EstadoPago)}
-                  className="input-field text-sm"
-                >
-                  {ESTADOS_PAGO.map((e) => (
-                    <option key={e} value={e}>
-                      {e}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  <select
+                    value={v.estado_pago}
+                    onChange={(e) => handlePagoChange(v.id, e.target.value as EstadoPago)}
+                    className="input-field text-sm"
+                  >
+                    {ESTADOS_PAGO.map((e) => (
+                      <option key={e} value={e}>
+                        {e}
+                      </option>
+                    ))}
+                  </select>
+                  {v.estado_pago === 'Señado' && (
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={senaValue(v.id, Number(v.monto_sena))}
+                      onChange={(e) => setSenaDrafts((d) => ({ ...d, [v.id]: e.target.value }))}
+                      onBlur={() =>
+                        handlePagoChange(v.id, 'Señado', Number(senaValue(v.id, Number(v.monto_sena))) || 0)
+                      }
+                      className="input-field text-sm"
+                      placeholder="Monto señado ($)"
+                    />
+                  )}
+                </div>
               ) : (
                 <Badge
                   variant={
                     v.estado_pago === 'Pagado'
                       ? 'success'
                       : v.estado_pago === 'Señado'
-                        ? 'warning'
+                        ? 'info'
                         : 'neutral'
+                  }
+                  className={
+                    v.estado_pago === 'Señado' ? '!bg-blue-50 !text-blue-700 !border-blue-100' : undefined
                   }
                 >
                   {v.estado_pago}
+                  {v.estado_pago === 'Señado'
+                    ? ` · ${formatCurrency(Number(v.monto_sena ?? 0))}`
+                    : ''}
                 </Badge>
               )}
             </div>
@@ -189,6 +226,9 @@ export function FacturacionView() {
                   </th>
                   <th className="px-5 py-3 text-center text-[10px] font-bold uppercase text-slate-500">
                     Estado pago
+                  </th>
+                  <th className="px-5 py-3 text-right text-[10px] font-bold uppercase text-slate-500">
+                    Seña
                   </th>
                 </tr>
               </thead>
@@ -226,19 +266,49 @@ export function FacturacionView() {
                             v.estado_pago === 'Pagado'
                               ? 'success'
                               : v.estado_pago === 'Señado'
-                                ? 'warning'
+                                ? 'info'
                                 : 'neutral'
+                          }
+                          className={
+                            v.estado_pago === 'Señado'
+                              ? '!bg-blue-50 !text-blue-700 !border-blue-100'
+                              : undefined
                           }
                         >
                           {v.estado_pago}
                         </Badge>
                       )}
                     </td>
+                    <td className="px-5 py-4 text-right">
+                      {v.estado_pago === 'Señado' && isAdmin ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={senaValue(v.id, Number(v.monto_sena))}
+                          onChange={(e) => setSenaDrafts((d) => ({ ...d, [v.id]: e.target.value }))}
+                          onBlur={() =>
+                            handlePagoChange(
+                              v.id,
+                              'Señado',
+                              Number(senaValue(v.id, Number(v.monto_sena))) || 0,
+                            )
+                          }
+                          className="input-field ml-auto w-28 py-1.5 text-xs"
+                        />
+                      ) : v.estado_pago === 'Señado' || Number(v.monto_sena ?? 0) > 0 ? (
+                        <span className="font-mono text-xs text-slate-600">
+                          {formatCurrency(Number(v.monto_sena ?? 0))}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {viajes.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-5 py-12 text-center text-slate-500">
+                    <td colSpan={5} className="px-5 py-12 text-center text-slate-500">
                       Sin viajes registrados
                     </td>
                   </tr>

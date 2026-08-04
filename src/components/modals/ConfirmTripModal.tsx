@@ -330,7 +330,7 @@ export function ConfirmTripModal({
             <option value="">Asignar después...</option>
             {choferesDisponibles.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nombre} — Lic. {c.licencia_categoria}
+                {c.nombre}
                 {c.estado === 'En viaje' ? ' (en viaje)' : ''}
               </option>
             ))}

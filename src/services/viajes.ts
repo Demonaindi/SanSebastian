@@ -73,16 +73,33 @@ export async function cancelarViaje(id: string): Promise<void> {
   if (error) throw error
 }
 
-export async function updateViajeEstadoPago(id: string, estado_pago: EstadoPago): Promise<Viaje> {
+export async function updateViajePago(
+  id: string,
+  opts: { estado_pago: EstadoPago; monto_sena?: number },
+): Promise<Viaje> {
+  const patch: { estado_pago: EstadoPago; monto_sena?: number } = {
+    estado_pago: opts.estado_pago,
+  }
+  if (opts.estado_pago === 'Pendiente') {
+    patch.monto_sena = 0
+  } else if (opts.estado_pago === 'Señado') {
+    const n = Number(opts.monto_sena ?? 0)
+    patch.monto_sena = Number.isFinite(n) && n >= 0 ? n : 0
+  }
+
   const { data, error } = await supabase
     .from('viajes')
-    .update({ estado_pago })
+    .update(patch)
     .eq('id', id)
     .select('*')
     .single()
 
   if (error) throw error
   return data
+}
+
+export async function updateViajeEstadoPago(id: string, estado_pago: EstadoPago): Promise<Viaje> {
+  return updateViajePago(id, { estado_pago })
 }
 
 export async function updateViajeEstado(id: string, estado_viaje: EstadoViaje): Promise<Viaje> {
