@@ -164,7 +164,9 @@ create or replace function public.vehiculo_disponible_en_rango(
   p_vehiculo_id uuid,
   p_fecha_desde date,
   p_fecha_hasta date,
-  p_exclude_viaje_id uuid default null
+  p_exclude_viaje_id uuid default null,
+  p_hora_desde time default null,
+  p_hora_hasta time default null
 )
 returns boolean
 language plpgsql
@@ -174,15 +176,32 @@ set search_path = public
 as $$
 declare
   v_fin date := coalesce(p_fecha_hasta, p_fecha_desde);
+  v_new_start timestamp;
+  v_new_end timestamp;
   v_conflicto integer;
 begin
+  v_new_start := (p_fecha_desde + coalesce(p_hora_desde, time '00:00'))::timestamp;
+  v_new_end := (v_fin + coalesce(p_hora_hasta, p_hora_desde, time '23:59:59'))::timestamp;
+  if v_new_end <= v_new_start then
+    v_new_end := v_new_start + interval '1 hour';
+  end if;
+
   select count(*) into v_conflicto
   from viajes v
   where v.vehiculo_id = p_vehiculo_id
-    and v.estado_viaje not in ('Cancelado')
+    and coalesce(v.estado_viaje, 'Reservado') not in ('Cancelado', 'Finalizado')
     and (p_exclude_viaje_id is null or v.id <> p_exclude_viaje_id)
-    and v.fecha_viaje <= v_fin
-    and public.viaje_rango_fin(v.fecha_viaje, v.fecha_hasta) >= p_fecha_desde;
+    and (
+      (v.fecha_viaje + coalesce(v.hora_viaje, time '00:00'))::timestamp
+      < v_new_end
+    )
+    and (
+      (
+        public.viaje_rango_fin(v.fecha_viaje, v.fecha_hasta)
+        + coalesce(v.hora_regreso, v.hora_llegada_aprox, v.hora_viaje, time '23:59:59')
+      )::timestamp
+      > v_new_start
+    );
 
   return v_conflicto = 0;
 end;
@@ -228,8 +247,15 @@ begin
     raise exception 'Vehículo no encontrado';
   end if;
 
-  if not public.vehiculo_disponible_en_rango(p_vehiculo_id, p_fecha_viaje, v_fecha_hasta) then
-    raise exception 'La unidad ya tiene una reserva en ese rango de fechas';
+  if not public.vehiculo_disponible_en_rango(
+    p_vehiculo_id,
+    p_fecha_viaje,
+    v_fecha_hasta,
+    null,
+    p_hora_viaje,
+    coalesce(p_hora_regreso, p_hora_llegada_aprox, p_hora_viaje)
+  ) then
+    raise exception 'La unidad ya tiene una reserva que se solapa en ese horario';
   end if;
 
   if p_chofer_id is not null and not exists (select 1 from choferes where id = p_chofer_id) then
@@ -272,6 +298,8 @@ declare
   v_viaje viajes%rowtype;
   v_vehiculo uuid;
   v_hasta date;
+  v_hora_viaje time;
+  v_hora_regreso time;
 begin
   select * into v_viaje from viajes where id = p_viaje_id for update;
   if not found then
@@ -280,20 +308,29 @@ begin
 
   v_vehiculo := coalesce(p_vehiculo_id, v_viaje.vehiculo_id);
   v_hasta := coalesce(p_fecha_hasta, p_fecha_viaje);
+  v_hora_viaje := coalesce(p_hora_viaje, v_viaje.hora_viaje);
+  v_hora_regreso := coalesce(p_hora_regreso, v_viaje.hora_regreso);
 
   if v_vehiculo is null then
     raise exception 'El viaje no tiene unidad asignada';
   end if;
 
-  if not public.vehiculo_disponible_en_rango(v_vehiculo, p_fecha_viaje, v_hasta, p_viaje_id) then
-    raise exception 'La unidad no está disponible en el nuevo rango';
+  if not public.vehiculo_disponible_en_rango(
+    v_vehiculo,
+    p_fecha_viaje,
+    v_hasta,
+    p_viaje_id,
+    v_hora_viaje,
+    coalesce(v_hora_regreso, v_viaje.hora_llegada_aprox, v_hora_viaje)
+  ) then
+    raise exception 'La unidad no está disponible en ese horario';
   end if;
 
   update viajes set
     fecha_viaje = p_fecha_viaje,
     fecha_hasta = v_hasta,
-    hora_viaje = coalesce(p_hora_viaje, hora_viaje),
-    hora_regreso = coalesce(p_hora_regreso, hora_regreso),
+    hora_viaje = v_hora_viaje,
+    hora_regreso = v_hora_regreso,
     vehiculo_id = v_vehiculo,
     estado_viaje = 'Reprogramado'
   where id = p_viaje_id;

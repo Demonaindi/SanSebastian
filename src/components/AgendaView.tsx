@@ -114,6 +114,11 @@ export function AgendaView() {
   const [viewMode, setViewMode] = useState<'lista' | 'semana' | 'mes'>('lista')
   const [selectedDay, setSelectedDay] = useState(() => toDateKey(new Date()))
   const [reserve, setReserve] = useState<{ vehiculoId: string; from: string; to: string } | null>(null)
+  const [daySheet, setDaySheet] = useState<{
+    vehiculoId: string
+    day: string
+    viajes: ViajeWithRelations[]
+  } | null>(null)
   const [editing, setEditing] = useState<ViajeWithRelations | null>(null)
   const [editForm, setEditForm] = useState({
     fecha_viaje: '',
@@ -198,10 +203,26 @@ export function AgendaView() {
 
   const openReserve = (vehiculoId: string, day: string) => {
     if (!isAdmin) return
+    setDaySheet(null)
     setReserve({ vehiculoId, from: day, to: day })
   }
 
+  const openDayCell = (vehiculoId: string, day: string, dayIdx: number) => {
+    const bars = barsByVehicle.get(vehiculoId) ?? []
+    const covering = bars
+      .filter((b) => dayIdx >= b.startIdx && dayIdx < b.startIdx + b.span)
+      .map((b) => b.viaje)
+      .sort((a, b) => (a.hora_viaje ?? '').localeCompare(b.hora_viaje ?? ''))
+
+    if (covering.length > 0) {
+      setDaySheet({ vehiculoId, day, viajes: covering })
+      return
+    }
+    openReserve(vehiculoId, day)
+  }
+
   const openDetail = (viaje: ViajeWithRelations) => {
+    setDaySheet(null)
     setEditing(viaje)
     setConfirmCancel(false)
     setEditForm({
@@ -400,7 +421,7 @@ export function AgendaView() {
     <div className="space-y-5 animate-fade-in md:space-y-6">
       <PageHeader
         title="Agenda de unidades"
-        description="Disponibilidad por vehículo. Amarillo = Pendiente · Azul = Señado · Verde = Pagado."
+        description="Disponibilidad por vehículo. Tocá un día con viajes para ver el detalle. Amarillo = Pendiente · Azul = Señado · Verde = Pagado."
         action={
           isAdmin ? (
             <Button onClick={() => vehiculos[0] && openReserve(vehiculos[0].id, toDateKey(new Date()))}>
@@ -657,6 +678,13 @@ export function AgendaView() {
 
             {vehiculos.map((vehiculo) => {
               const bars = barsByVehicle.get(vehiculo.id) ?? []
+              const maxStack = Math.max(
+                1,
+                ...days.map((_, dayIdx) =>
+                  bars.filter((b) => dayIdx >= b.startIdx && dayIdx < b.startIdx + b.span).length,
+                ),
+              )
+              const rowMin = isMonthView ? Math.max(40, 8 + maxStack * 16) : Math.max(56, 12 + maxStack * 22)
               return (
                 <div
                   key={vehiculo.id}
@@ -676,56 +704,83 @@ export function AgendaView() {
                     </div>
                   </div>
 
-                  {days.map((day, dayIdx) => (
-                    <div
-                      key={`${vehiculo.id}-${day}`}
-                      role={isAdmin ? 'button' : undefined}
-                      tabIndex={isAdmin ? 0 : undefined}
-                      onClick={() => openReserve(vehiculo.id, day)}
-                      onKeyDown={(e) => {
-                        if (isAdmin && (e.key === 'Enter' || e.key === ' ')) openReserve(vehiculo.id, day)
-                      }}
-                      className={`relative min-h-[48px] border-l border-slate-50 ${
-                        isAdmin ? 'cursor-pointer hover:bg-primary/5' : ''
-                      } ${isMonthView ? 'min-h-[40px]' : 'min-h-[56px]'}`}
-                    >
-                      {bars
-                        .filter((b) => b.startIdx === dayIdx)
-                        .map(({ viaje, span }) => (
-                          <div
-                            key={viaje.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openDetail(viaje)
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.stopPropagation()
-                                openDetail(viaje)
-                              }
-                            }}
-                            className={`absolute top-1 bottom-1 z-10 overflow-hidden rounded-md text-left font-semibold text-white ${
-                              isMonthView ? 'px-0.5 py-0.5 text-[9px]' : 'top-1.5 bottom-1.5 rounded-lg px-2 py-1 text-[10px]'
-                            }`}
-                            style={{
-                              left: 2,
-                              width: `calc(${span * 100}% - 4px)`,
-                              backgroundColor: paymentBarColor(viaje.estado_pago),
-                              borderLeft: `3px solid ${vehiculo.color || '#fff'}`,
-                            }}
-                            title={`${viaje.origen} → ${viaje.destino}`}
-                          >
-                            {!isMonthView && (
-                              <span className="block truncate">
-                                {viaje.origen} → {viaje.destino}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  ))}
+                  {days.map((day, dayIdx) => {
+                    const covering = bars
+                      .filter((b) => dayIdx >= b.startIdx && dayIdx < b.startIdx + b.span)
+                      .sort((a, b) => (a.viaje.hora_viaje ?? '').localeCompare(b.viaje.hora_viaje ?? ''))
+                    const starting = bars
+                      .filter((b) => b.startIdx === dayIdx)
+                      .sort((a, b) => (a.viaje.hora_viaje ?? '').localeCompare(b.viaje.hora_viaje ?? ''))
+
+                    return (
+                      <div
+                        key={`${vehiculo.id}-${day}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openDayCell(vehiculo.id, day, dayIdx)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') openDayCell(vehiculo.id, day, dayIdx)
+                        }}
+                        className={`relative border-l border-slate-50 ${
+                          covering.length > 0 || isAdmin ? 'cursor-pointer hover:bg-primary/5' : ''
+                        }`}
+                        style={{ minHeight: rowMin }}
+                      >
+                        {isMonthView
+                          ? covering.map((b, i) => (
+                              <div
+                                key={b.viaje.id}
+                                className="absolute left-0.5 right-0.5 z-10 overflow-hidden rounded-sm"
+                                style={{
+                                  top: 3 + i * 15,
+                                  height: 13,
+                                  backgroundColor: paymentBarColor(b.viaje.estado_pago),
+                                  borderLeft: `2px solid ${vehiculo.color || '#fff'}`,
+                                }}
+                                title={`${b.viaje.hora_viaje?.slice(0, 5) ?? 's/h'} · ${b.viaje.origen} → ${b.viaje.destino}`}
+                              />
+                            ))
+                          : starting.map(({ viaje, span }, i) => {
+                              const lane = covering.findIndex((c) => c.viaje.id === viaje.id)
+                              const top = 4 + (lane >= 0 ? lane : i) * 22
+                              return (
+                                <div
+                                  key={viaje.id}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openDetail(viaje)
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.stopPropagation()
+                                      openDetail(viaje)
+                                    }
+                                  }}
+                                  className="absolute z-10 overflow-hidden rounded-lg px-2 py-1 text-left text-[10px] font-semibold text-white"
+                                  style={{
+                                    top,
+                                    height: 20,
+                                    left: 2,
+                                    width: `calc(${span * 100}% - 4px)`,
+                                    backgroundColor: paymentBarColor(viaje.estado_pago),
+                                    borderLeft: `3px solid ${vehiculo.color || '#fff'}`,
+                                  }}
+                                  title={`${viaje.hora_viaje?.slice(0, 5) ?? 's/h'} · ${viaje.origen} → ${viaje.destino}`}
+                                >
+                                  <span className="block truncate">
+                                    {viaje.hora_viaje?.slice(0, 5)
+                                      ? `${viaje.hora_viaje.slice(0, 5)} · `
+                                      : ''}
+                                    {viaje.origen} → {viaje.destino}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })}
@@ -741,6 +796,88 @@ export function AgendaView() {
           <CalendarDays className="h-4 w-4" strokeWidth={1.75} />
           Modo operador: podés ver disponibilidad y detalle. Las reservas las gestiona un administrador.
         </p>
+      )}
+
+      {daySheet && (
+        <Modal
+          open={!!daySheet}
+          onClose={() => setDaySheet(null)}
+          title={`Viajes · ${formatDayLabel(daySheet.day)}`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDaySheet(null)}>
+                Cerrar
+              </Button>
+              {isAdmin && (
+                <Button
+                  onClick={() => {
+                    const { vehiculoId, day } = daySheet
+                    openReserve(vehiculoId, day)
+                  }}
+                >
+                  <Plus className="h-4 w-4" strokeWidth={1.75} />
+                  Nueva reserva
+                </Button>
+              )}
+            </>
+          }
+        >
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">
+              {vehiculos.find((v) => v.id === daySheet.vehiculoId)
+                ? formatVehiculoInterno(vehiculos.find((v) => v.id === daySheet.vehiculoId)!)
+                : 'Unidad'}
+              {isAdmin
+                ? ' · Podés agregar otro viaje el mismo día si no se solapan los horarios.'
+                : ''}
+            </p>
+            {daySheet.viajes.map((viaje) => (
+              <button
+                key={viaje.id}
+                type="button"
+                onClick={() => openDetail(viaje)}
+                className="tap-press flex w-full gap-3 rounded-2xl border border-slate-100 bg-white p-3 text-left hover:border-brand/30 hover:bg-primary/5"
+              >
+                <div
+                  className="w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: paymentBarColor(viaje.estado_pago) }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="truncate font-bold text-slate-900">
+                      {viaje.origen} → {viaje.destino}
+                    </p>
+                    <Badge
+                      variant={
+                        viaje.estado_pago === 'Pagado'
+                          ? 'success'
+                          : viaje.estado_pago === 'Señado'
+                            ? 'info'
+                            : 'warning'
+                      }
+                      className={
+                        viaje.estado_pago === 'Señado'
+                          ? '!bg-blue-50 !text-blue-700 !border-blue-100'
+                          : undefined
+                      }
+                    >
+                      {viaje.estado_pago}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {viaje.hora_viaje?.slice(0, 5) ?? 'Sin hora'}
+                    {viaje.hora_regreso ? ` → ${viaje.hora_regreso.slice(0, 5)}` : ''}
+                    {' · '}
+                    {viaje.clientes?.nombre_razon_social ?? 'Sin cliente'}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-brand">
+                    {formatCurrency(Number(viaje.precio_total))}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {reserve && (

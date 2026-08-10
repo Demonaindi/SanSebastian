@@ -151,7 +151,8 @@ export function DirectReserveModal({
     >
       <div className="space-y-4">
         <p className="text-xs text-slate-500">
-          Ideal para clubes y servicios especiales no tarifados. El precio es libre.
+          Ideal para clubes y servicios especiales no tarifados. El precio es libre. Si la unidad ya
+          tiene otro viaje el mismo día, cargá horarios para que no se solapen.
         </p>
 
         {docWarning === 'danger' && (
