@@ -104,6 +104,19 @@ function formatDayLabel(day: string): string {
   })
 }
 
+function buildMonthCells(monthStart: string): (string | null)[] {
+  const first = new Date(monthStart + 'T12:00:00')
+  const dim = daysInMonth(monthStart)
+  const sundayBased = first.getDay()
+  const startPad = sundayBased === 0 ? 6 : sundayBased - 1
+  const cells: (string | null)[] = Array.from({ length: startPad }, () => null)
+  for (let i = 0; i < dim; i++) cells.push(addDays(monthStart, i))
+  while (cells.length % 7 !== 0) cells.push(null)
+  return cells
+}
+
+const WEEKDAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+
 export function AgendaView() {
   const { isAdmin } = useAuth()
   const { toast } = useToast()
@@ -191,6 +204,27 @@ export function AgendaView() {
     }
     return map
   }, [activeViajes, vehiculos, weekStart, weekEnd])
+
+  const monthCells = useMemo(
+    () => (isMonthView ? buildMonthCells(weekStart) : []),
+    [isMonthView, weekStart],
+  )
+
+  const viajesCountByDay = useMemo(() => {
+    const map = new Map<string, { count: number; colors: string[] }>()
+    for (const v of activeViajes) {
+      const fin = viajeFechaFin(v.fecha_viaje, v.fecha_hasta)
+      let d = v.fecha_viaje
+      while (d <= fin) {
+        const entry = map.get(d) ?? { count: 0, colors: [] }
+        entry.count += 1
+        if (entry.colors.length < 3) entry.colors.push(paymentBarColor(v.estado_pago))
+        map.set(d, entry)
+        d = addDays(d, 1)
+      }
+    }
+    return map
+  }, [activeViajes])
 
   const dayListViajes = useMemo(() => {
     return activeViajes
@@ -418,21 +452,25 @@ export function AgendaView() {
   const docWarning = editingVehicle ? getVehiculoDocLevel(editingVehicle) : 'ok'
 
   return (
-    <div className="space-y-5 animate-fade-in md:space-y-6">
+    <div className="space-y-3 animate-fade-in md:space-y-6">
       <PageHeader
         title="Agenda de unidades"
-        description="Disponibilidad por vehículo. Tocá un día con viajes para ver el detalle. Amarillo = Pendiente · Azul = Señado · Verde = Pagado."
+        description="Disponibilidad por vehículo. Tocá un viaje para ver el detalle. Amarillo = Pendiente · Azul = Señado · Verde = Pagado."
         action={
           isAdmin ? (
-            <Button onClick={() => vehiculos[0] && openReserve(vehiculos[0].id, toDateKey(new Date()))}>
+            <Button
+              size="sm"
+              onClick={() => vehiculos[0] && openReserve(vehiculos[0].id, toDateKey(new Date()))}
+            >
               <Plus className="h-4 w-4" strokeWidth={1.75} />
-              Nueva reserva
+              <span className="sm:hidden">Reservar</span>
+              <span className="hidden sm:inline">Nueva reserva</span>
             </Button>
           ) : undefined
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
         <Button
           variant="secondary"
           size="sm"
@@ -484,12 +522,12 @@ export function AgendaView() {
         >
           <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
         </Button>
-        <p className="text-sm font-semibold capitalize text-slate-900">
+        <p className="min-w-0 flex-1 truncate text-sm font-semibold capitalize text-slate-900">
           {isMonthView
             ? formatMonthLabel(weekStart)
             : `${formatDayLabel(weekStart)} — ${formatDayLabel(weekEnd)}`}
         </p>
-        <div className="ml-auto flex flex-wrap gap-2">
+        <div className="hidden flex-wrap gap-2 sm:flex">
           <Badge variant="warning" dot>
             Pendiente
           </Badge>
@@ -502,20 +540,20 @@ export function AgendaView() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-1.5 sm:gap-2">
         <button
           type="button"
           onClick={() => setViewMode('lista')}
-          className={`tap-press rounded-2xl border px-3 py-2 text-xs font-semibold lg:hidden ${
+          className={`tap-press flex-1 rounded-xl border px-2 py-2 text-[11px] font-semibold sm:flex-none sm:rounded-2xl sm:px-3 sm:text-xs lg:hidden ${
             viewMode === 'lista' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
           }`}
         >
-          Lista del día
+          Día
         </button>
         <button
           type="button"
           onClick={() => setViewMode('semana')}
-          className={`tap-press rounded-2xl border px-3 py-2 text-xs font-semibold ${
+          className={`tap-press flex-1 rounded-xl border px-2 py-2 text-[11px] font-semibold sm:flex-none sm:rounded-2xl sm:px-3 sm:text-xs ${
             viewMode === 'semana' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
           }`}
         >
@@ -524,58 +562,112 @@ export function AgendaView() {
         <button
           type="button"
           onClick={() => setViewMode('mes')}
-          className={`tap-press rounded-2xl border px-3 py-2 text-xs font-semibold ${
+          className={`tap-press flex-1 rounded-xl border px-2 py-2 text-[11px] font-semibold sm:flex-none sm:rounded-2xl sm:px-3 sm:text-xs ${
             viewMode === 'mes' ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600'
           }`}
         >
-          Mes completo
+          Mes
         </button>
       </div>
 
-      {/* Mobile day list */}
-      <div className={`space-y-3 ${viewMode === 'lista' ? 'lg:hidden' : 'hidden'}`}>
-        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar">
-          {days.map((day) => {
-            const active = day === selectedDay
-            const count = activeViajes.filter((v) => {
-              const fin = viajeFechaFin(v.fecha_viaje, v.fecha_hasta)
-              return v.fecha_viaje <= day && fin >= day
-            }).length
-            return (
-              <button
-                key={day}
-                type="button"
-                onClick={() => setSelectedDay(day)}
-                className={`tap-press shrink-0 rounded-2xl border px-3 py-2 text-center ${
-                  active ? 'border-brand bg-primary-muted' : 'border-slate-200 bg-white'
-                }`}
-              >
-                <p className="text-[10px] font-bold uppercase text-slate-500">
-                  {new Date(day + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short' })}
-                </p>
-                <p className={`text-sm font-bold ${active ? 'text-brand' : 'text-slate-900'}`}>
-                  {new Date(day + 'T12:00:00').getDate()}
-                </p>
-                {count > 0 && <p className="text-[10px] text-slate-400">{count} viaje(s)</p>}
-              </button>
-            )
-          })}
+      {/* Mobile: calendario / tira de días + tarjetas legibles */}
+      <div className="space-y-3 lg:hidden">
+        {isMonthView ? (
+          <Card hover={false}>
+            <CardBody className="p-3">
+              <div className="mb-2 grid grid-cols-7 gap-1">
+                {WEEKDAY_LABELS.map((label) => (
+                  <p key={label} className="text-center text-[10px] font-bold uppercase text-slate-400">
+                    {label}
+                  </p>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {monthCells.map((day, idx) => {
+                  if (!day) return <div key={`pad-${idx}`} />
+                  const active = day === selectedDay
+                  const isToday = day === toDateKey(new Date())
+                  const info = viajesCountByDay.get(day)
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => setSelectedDay(day)}
+                      className={`tap-press flex min-h-[44px] flex-col items-center justify-center rounded-xl border px-0.5 py-1 ${
+                        active
+                          ? 'border-brand bg-brand text-white'
+                          : isToday
+                            ? 'border-brand/40 bg-primary/5 text-slate-900'
+                            : 'border-slate-200 bg-white text-slate-800'
+                      }`}
+                    >
+                      <span className="text-sm font-bold">
+                        {new Date(day + 'T12:00:00').getDate()}
+                      </span>
+                      {info && info.count > 0 && (
+                        <span className="mt-0.5 flex gap-0.5">
+                          {info.colors.map((c, i) => (
+                            <span
+                              key={`${day}-${i}`}
+                              className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-white/90' : ''}`}
+                              style={active ? undefined : { backgroundColor: c }}
+                            />
+                          ))}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </CardBody>
+          </Card>
+        ) : (
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar">
+            {days.map((day) => {
+              const active = day === selectedDay
+              const count = viajesCountByDay.get(day)?.count ?? 0
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => setSelectedDay(day)}
+                  className={`tap-press shrink-0 rounded-2xl border px-3 py-2 text-center ${
+                    active ? 'border-brand bg-primary-muted' : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <p className="text-[10px] font-bold uppercase text-slate-500">
+                    {new Date(day + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short' })}
+                  </p>
+                  <p className={`text-sm font-bold ${active ? 'text-brand' : 'text-slate-900'}`}>
+                    {new Date(day + 'T12:00:00').getDate()}
+                  </p>
+                  {count > 0 && <p className="text-[10px] text-slate-400">{count} viaje(s)</p>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold capitalize text-slate-800">
+            {formatDayLabel(selectedDay)}
+          </p>
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => vehiculos[0] && openReserve(vehiculos[0].id, selectedDay)}
+            >
+              <Plus className="h-4 w-4" strokeWidth={1.75} />
+              Reservar
+            </Button>
+          )}
         </div>
 
         {dayListViajes.length === 0 ? (
           <Card hover={false}>
-            <CardBody className="py-10 text-center text-sm text-slate-500">
+            <CardBody className="py-8 text-center text-sm text-slate-500">
               Sin viajes este día.
-              {isAdmin && (
-                <div className="mt-3">
-                  <Button
-                    size="sm"
-                    onClick={() => vehiculos[0] && openReserve(vehiculos[0].id, selectedDay)}
-                  >
-                    Reservar unidad
-                  </Button>
-                </div>
-              )}
             </CardBody>
           </Card>
         ) : (
@@ -586,7 +678,7 @@ export function AgendaView() {
                 key={viaje.id}
                 type="button"
                 onClick={() => openDetail(viaje)}
-                className="tap-press card-premium flex w-full gap-3 p-3 text-left"
+                className="tap-press card-premium flex w-full gap-3 p-3.5 text-left"
               >
                 <div
                   className="w-1.5 shrink-0 rounded-full"
@@ -594,7 +686,7 @@ export function AgendaView() {
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="truncate font-bold text-slate-900">
+                    <p className="font-bold leading-snug text-slate-900">
                       {viaje.origen} → {viaje.destino}
                     </p>
                     <Badge
@@ -614,7 +706,7 @@ export function AgendaView() {
                       {viaje.estado_pago}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1.5 text-xs text-slate-500">
                     <span
                       className="mr-1 inline-block h-2 w-2 rounded-full align-middle"
                       style={{ backgroundColor: unit?.color || '#3b82f6' }}
@@ -622,14 +714,15 @@ export function AgendaView() {
                     {unit ? formatVehiculoInterno(unit) : 'Sin unidad'} ·{' '}
                     {viaje.clientes?.nombre_razon_social ?? 'Sin cliente'}
                   </p>
-                  <div className="mt-2 flex items-end justify-between">
-                    <p className="text-xs text-slate-400">
+                  <div className="mt-2 flex items-end justify-between gap-2">
+                    <p className="text-xs text-slate-500">
                       {viaje.hora_viaje?.slice(0, 5) ?? 'Sin hora'}
+                      {viaje.hora_regreso ? ` → ${viaje.hora_regreso.slice(0, 5)}` : ''}
                       {viaje.fecha_hasta && viaje.fecha_hasta !== viaje.fecha_viaje
                         ? ` · hasta ${viaje.fecha_hasta}`
                         : ''}
                     </p>
-                    <p className="text-base font-semibold text-brand">
+                    <p className="shrink-0 text-base font-semibold text-brand">
                       {formatCurrency(Number(viaje.precio_total))}
                     </p>
                   </div>
@@ -640,13 +733,8 @@ export function AgendaView() {
         )}
       </div>
 
-      {/* Timeline: semana / mes */}
-      <Card
-        hover={false}
-        className={`overflow-hidden ${
-          viewMode === 'semana' || viewMode === 'mes' ? 'block' : 'hidden lg:block'
-        }`}
-      >
+      {/* Desktop timeline: semana / mes */}
+      <Card hover={false} className="hidden overflow-hidden lg:block">
         <div className="overflow-x-auto">
           <div
             className={isMonthView ? 'min-w-[980px]' : 'min-w-[720px] lg:min-w-[980px]'}
