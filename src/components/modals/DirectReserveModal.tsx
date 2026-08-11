@@ -24,7 +24,8 @@ export function DirectReserveModal({
   fechaFin,
 }: DirectReserveModalProps) {
   const { vehiculos, clientes, choferes, refreshAll } = useData()
-  const vehiculo = vehiculos.find((v) => v.id === vehiculoId)
+  const [selectedVehiculoId, setSelectedVehiculoId] = useState(vehiculoId)
+  const vehiculo = vehiculos.find((v) => v.id === selectedVehiculoId)
 
   const [origen, setOrigen] = useState('')
   const [destino, setDestino] = useState('')
@@ -46,9 +47,11 @@ export function DirectReserveModal({
 
   useEffect(() => {
     if (!open) return
+    setSelectedVehiculoId(vehiculoId || '')
     setFechaDesde(fechaInicio)
     setFechaHasta(fechaFin || fechaInicio)
-  }, [open, fechaInicio, fechaFin])
+    setError('')
+  }, [open, fechaInicio, fechaFin, vehiculoId])
 
   const choferesOpts = useMemo(() => choferes, [choferes])
 
@@ -80,7 +83,10 @@ export function DirectReserveModal({
   }
 
   const handleSave = async () => {
-    if (!vehiculo) return
+    if (!selectedVehiculoId || !vehiculo) {
+      setError('Seleccioná una unidad.')
+      return
+    }
     if (!origen.trim() || !destino.trim()) {
       setError('Completá origen y destino.')
       return
@@ -136,7 +142,7 @@ export function DirectReserveModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Reserva directa — ${vehiculo ? formatVehiculoInterno(vehiculo) : 'Unidad'}`}
+      title="Nueva reserva"
       wide
       footer={
         <>
@@ -154,6 +160,21 @@ export function DirectReserveModal({
           Ideal para clubes y servicios especiales no tarifados. El precio es libre. Si la unidad ya
           tiene otro viaje el mismo día, cargá horarios para que no se solapen.
         </p>
+
+        <FormField label="Unidad *">
+          <select
+            value={selectedVehiculoId}
+            onChange={(e) => setSelectedVehiculoId(e.target.value)}
+            className="input-field"
+          >
+            <option value="">Seleccionar unidad...</option>
+            {vehiculos.map((v) => (
+              <option key={v.id} value={v.id}>
+                {formatVehiculoInterno(v)} · {v.capacidad} pax
+              </option>
+            ))}
+          </select>
+        </FormField>
 
         {docWarning === 'danger' && (
           <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
