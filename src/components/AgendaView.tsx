@@ -652,7 +652,7 @@ export function AgendaView() {
             className={isMonthView ? 'min-w-[980px]' : 'min-w-[720px] lg:min-w-[980px]'}
           >
             <div
-              className="grid border-b border-slate-100 bg-slate-50"
+              className="grid border-b border-slate-400 bg-slate-50"
               style={{ gridTemplateColumns: `140px repeat(${days.length}, minmax(${colMin}, 1fr))` }}
             >
               <div className="sticky left-0 z-20 bg-slate-50 px-3 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
@@ -688,10 +688,10 @@ export function AgendaView() {
               return (
                 <div
                   key={vehiculo.id}
-                  className="grid border-b border-slate-50"
+                  className="grid border-b border-slate-400"
                   style={{ gridTemplateColumns: `140px repeat(${days.length}, minmax(${colMin}, 1fr))` }}
                 >
-                  <div className="sticky left-0 z-20 flex items-center gap-2 border-r border-slate-100 bg-white px-3 py-3">
+                  <div className="sticky left-0 z-20 flex items-center gap-2 border-r border-slate-400 bg-white px-3 py-3">
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: vehiculo.color || '#3b82f6' }}
@@ -721,7 +721,7 @@ export function AgendaView() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') openDayCell(vehiculo.id, day, dayIdx)
                         }}
-                        className={`relative border-l border-slate-50 ${
+                        className={`relative border-l border-slate-400 ${
                           covering.length > 0 || isAdmin ? 'cursor-pointer hover:bg-primary/5' : ''
                         }`}
                         style={{ minHeight: rowMin }}
