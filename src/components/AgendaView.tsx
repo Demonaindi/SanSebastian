@@ -116,6 +116,11 @@ function buildMonthCells(monthStart: string): (string | null)[] {
 }
 
 const WEEKDAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+const WEEKDAY_ABBR = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá']
+
+function weekdayAbbr(date: Date): string {
+  return WEEKDAY_ABBR[date.getDay()] ?? ''
+}
 
 export function AgendaView() {
   const { isAdmin } = useAuth()
@@ -751,12 +756,10 @@ export function AgendaView() {
                 const isToday = day === toDateKey(new Date())
                 return (
                   <div key={day} className={`px-0.5 py-2 text-center ${isToday ? 'bg-primary/10' : ''}`}>
-                    {!isMonthView && (
-                      <p className="text-[10px] font-bold uppercase text-slate-500">
-                        {d.toLocaleDateString('es-AR', { weekday: 'short' })}
-                      </p>
-                    )}
-                    <p className={`text-xs font-semibold ${isToday ? 'text-brand' : 'text-slate-800'} ${isMonthView ? 'text-[11px]' : 'text-sm'}`}>
+                    <p className={`font-bold uppercase text-slate-500 ${isMonthView ? 'text-[9px] leading-none' : 'text-[10px]'}`}>
+                      {isMonthView ? weekdayAbbr(d) : d.toLocaleDateString('es-AR', { weekday: 'short' })}
+                    </p>
+                    <p className={`text-xs font-semibold ${isToday ? 'text-brand' : 'text-slate-800'} ${isMonthView ? 'mt-0.5 text-[11px]' : 'text-sm'}`}>
                       {d.getDate()}
                     </p>
                   </div>
@@ -1019,6 +1022,9 @@ export function AgendaView() {
               <p className="mt-1 text-slate-600">
                 {editing.clientes?.nombre_razon_social ?? 'Sin cliente'} · {editing.estado_viaje}
               </p>
+              {editing.clientes?.telefono && (
+                <p className="mt-0.5 text-sm text-slate-500">{editing.clientes.telefono}</p>
+              )}
               {editing.paradas_intermedias && (
                 <p className="mt-2 text-xs text-slate-500">Itinerario: {editing.paradas_intermedias}</p>
               )}
