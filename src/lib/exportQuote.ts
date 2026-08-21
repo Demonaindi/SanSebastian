@@ -1,4 +1,4 @@
-import { formatCurrency, formatDurationHours, formatRatePerKm } from './quote'
+import { formatCurrency } from './quote'
 import {
   formatPresupuestoNumero,
   formatVehiculoPublico,
@@ -68,11 +68,14 @@ export function buildWhatsAppUrl(data: QuoteExportData): string {
   const condiciones =
     data.presupuesto?.condiciones_pago ?? data.condicionesPago ?? CONDICIONES_PAGO_DEFAULT
   const fechaTxt = formatFechaWhatsApp(data.fecha, data.hora, data.fechaHasta)
-  const tiempo = formatDurationHours(data.duracionMinutos)
   const unidad = formatVehiculoPublico(data.vehiculo)
   const adicionales = data.adicionales ?? data.presupuesto?.adicionales ?? []
-  const valorKm = data.valorKm ?? data.presupuesto?.valor_km ?? null
-  const precioBase = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+  const precioBaseRaw = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+  const adicionalesSum = adicionales.reduce((sum, a) => sum + (Number(a.precio) || 0), 0)
+  const baseServicio =
+    precioBaseRaw != null && Number(precioBaseRaw) > 0
+      ? Number(precioBaseRaw)
+      : Math.max(0, Number(data.precioTotal) - adicionalesSum)
 
   const adicionalLines = adicionales.map(
     (a) => `• ${a.nombre}: ${formatCurrency(Number(a.precio))}`,
@@ -90,10 +93,7 @@ export function buildWhatsAppUrl(data: QuoteExportData): string {
     data.paradasIntermedias ? `• Paradas / itinerario: ${data.paradasIntermedias}` : '',
     `• Pasajeros: ${data.pasajeros}`,
     fechaTxt ? `• Fechas: ${fechaTxt}` : '',
-    `• Distancia: ${data.distancia} km`,
-    valorKm != null ? `• Valor por km: ${formatRatePerKm(valorKm)}` : '',
-    precioBase != null ? `• Base (km × tarifa): ${formatCurrency(precioBase)}` : '',
-    tiempo ? `• Tiempo estimado: ${tiempo}` : '',
+    `• Base del servicio: ${formatCurrency(baseServicio)}`,
     `• Unidad: ${unidad}`,
     adicionales.length ? '' : null,
     adicionales.length ? '*ADICIONALES*' : null,
@@ -167,15 +167,18 @@ function buildQuoteHtml(data: QuoteExportData): string {
     ? `<tr><td>Paradas del itinerario</td><td>${escapeHtml(data.paradasIntermedias)}</td></tr>`
     : ''
   const adicionales = data.adicionales ?? data.presupuesto?.adicionales ?? []
-  const valorKm = data.valorKm ?? data.presupuesto?.valor_km ?? null
-  const precioBase = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+  const precioBaseRaw = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+  const adicionalesSum = adicionales.reduce((sum, a) => sum + (Number(a.precio) || 0), 0)
+  const baseServicio =
+    precioBaseRaw != null && Number(precioBaseRaw) > 0
+      ? Number(precioBaseRaw)
+      : Math.max(0, Number(data.precioTotal) - adicionalesSum)
   const adicionalRows = adicionales
     .map(
       (a) =>
         `<tr><td>${escapeHtml(a.nombre)}</td><td>${formatCurrency(Number(a.precio))}</td></tr>`,
     )
     .join('')
-  const tiempo = formatDurationHours(data.duracionMinutos)
   const unidad = formatVehiculoPublico(data.vehiculo)
 
   return `<!DOCTYPE html>
@@ -205,9 +208,7 @@ function buildQuoteHtml(data: QuoteExportData): string {
     ${paradasLine}
     <tr><td>Pasajeros</td><td>${data.pasajeros}</td></tr>
     ${fechaLine}
-    <tr><td>Kilómetros</td><td>${data.distancia} km${tiempo ? ` (${tiempo})` : ''}</td></tr>
-    ${valorKm != null ? `<tr><td>Valor por km</td><td>${formatRatePerKm(valorKm)}</td></tr>` : ''}
-    ${precioBase != null ? `<tr><td>Base (km × tarifa)</td><td>${formatCurrency(precioBase)}</td></tr>` : ''}
+    <tr><td>Base del servicio</td><td>${formatCurrency(baseServicio)}</td></tr>
     <tr><td>Vehículo</td><td>${escapeHtml(unidad)}</td></tr>
     ${adicionalRows}
   </table>

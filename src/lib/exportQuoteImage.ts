@@ -1,5 +1,5 @@
 import { toPng } from 'html-to-image'
-import { formatCurrency, formatDurationHours } from './quote'
+import { formatCurrency } from './quote'
 import { formatVehiculoPublico, getCategoriaLabel } from './mappers'
 import {
   CONDICIONES_PAGO_DEFAULT,
@@ -128,23 +128,23 @@ export function buildVisualQuoteMarkup(data: QuoteExportData, bannerSrc: string)
   const paradas = data.paradasIntermedias?.trim()
     ? softClamp(data.paradasIntermedias.trim(), 260)
     : ''
-  const tiempo = formatDurationHours(data.duracionMinutos)
 
   const adicionales = data.adicionales ?? data.presupuesto?.adicionales ?? []
-  const valorKm = data.valorKm ?? data.presupuesto?.valor_km ?? null
-  const precioBase = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+  const precioBaseRaw = data.precioBase ?? data.presupuesto?.precio_base ?? data.precioBaseCalculado ?? null
+  const adicionalesSum = adicionales.reduce((sum, a) => sum + (Number(a.precio) || 0), 0)
+  const baseServicio =
+    precioBaseRaw != null && Number(precioBaseRaw) > 0
+      ? Number(precioBaseRaw)
+      : Math.max(0, Number(data.precioTotal) - adicionalesSum)
 
   const servicioItems = [
     `Traslado ida y vuelta ${origen} – ${destino}.`,
     paradas ? `Itinerario / paradas: ${paradas}.` : 'Permanencia durante toda la estadía.',
     `Unidad habilitada para ${data.pasajeros} pasajeros (capacidad ${data.vehiculo.capacidad}).`,
-    data.distancia > 0
-      ? `Distancia: ${data.distancia} km${tiempo ? ` · ${tiempo}` : ''}${valorKm != null ? ` · ${formatCurrency(valorKm)}/km` : ''}.`
-      : null,
-    precioBase != null ? `Base del servicio: ${formatCurrency(precioBase)}.` : null,
+    `Base del servicio: ${formatCurrency(baseServicio)}.`,
     ...adicionales.map((a) => `${a.nombre}: ${formatCurrency(Number(a.precio))}.`),
     'Incluye combustible, peajes y seguros.',
-  ].filter(Boolean) as string[]
+  ]
 
   const routeShort = (value: string) => softClamp(value, 54)
 

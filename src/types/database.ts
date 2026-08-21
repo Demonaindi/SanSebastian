@@ -219,6 +219,6 @@ export interface NewCajaInput {
 }
 
 export const CONDICIONES_PAGO_DEFAULT =
-  'Seña del 50% para confirmar. Saldo restante 48 hs antes del viaje. Cancelaciones con menos de 72 hs: seña no reembolsable.'
+  'Seña del 10% para confirmar. Saldo restante 48 hs antes del viaje. Cancelaciones con menos de 48 hs: seña no reembolsable.'
 
-export const DIAS_VALIDEZ_PRESUPUESTO_DEFAULT = 7
+export const DIAS_VALIDEZ_PRESUPUESTO_DEFAULT = 15
