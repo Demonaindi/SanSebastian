@@ -109,7 +109,6 @@ export function buildWhatsAppUrl(data: QuoteExportData): string {
     `• Pago: ${condiciones}`,
     '',
     '_Incluye combustible, peajes y seguros de la unidad._',
-    '_Alojamiento y comidas de choferes NO incluidos._',
     '',
     'WhatsApp: 3364493088',
   ].filter((line) => line !== '' && line !== null) as string[]

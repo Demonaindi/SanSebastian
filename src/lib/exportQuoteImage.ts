@@ -263,8 +263,6 @@ export function buildVisualQuoteMarkup(data: QuoteExportData, bannerSrc: string)
         padding: 8px 14px; border-radius: 8px;
       ">Observaciones</div>
       <div style="font-size: 13px; line-height: 1.5; color: #243041; ${WRAP}">
-        <div style="margin-bottom: 8px;">• El alojamiento y las comidas de los choferes <span style="color:${ORANGE};font-weight:900;">NO ESTÁN INCLUIDOS</span> en el valor del servicio.</div>
-        <div style="margin-bottom: 8px;">• El hotel y las comidas de los choferes serán provistos y abonados por el contratante (${escapeHtml(cliente)}).</div>
         <div style="margin-bottom: 8px;">• Incluye combustible, peajes y seguros.</div>
         <div style="margin-bottom: 8px;">• Condiciones de pago: ${escapeHtml(condiciones)}</div>
         <div style="margin-bottom: 8px;">• Presupuesto sujeto a disponibilidad de unidades al momento de la confirmación.</div>
