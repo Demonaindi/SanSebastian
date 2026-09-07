@@ -67,7 +67,7 @@ export function HomeView({ onNavigate }: HomeViewProps) {
     {
       id: 'metricas',
       label: 'Números',
-      description: 'Mes a mes',
+      description: 'Ganancias',
       icon: BarChart3,
       tone: 'from-sky-100 to-cyan-200 text-sky-800',
       adminOnly: true,
@@ -94,14 +94,6 @@ export function HomeView({ onNavigate }: HomeViewProps) {
       description: 'Personal',
       icon: UserCog,
       tone: 'from-emerald-100 to-green-200 text-emerald-700',
-      adminOnly: true,
-    },
-    {
-      id: 'facturacion',
-      label: 'Caja',
-      description: 'Cobros',
-      icon: Wallet,
-      tone: 'from-rose-100 to-pink-200 text-rose-700',
       adminOnly: true,
     },
   ]

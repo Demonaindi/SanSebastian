@@ -9,7 +9,6 @@ import { ClientesView } from './components/ClientesView'
 import { CotizacionesView } from './components/CotizacionesView'
 import { CotizadorView } from './components/CotizadorView'
 import { CuentaView } from './components/CuentaView'
-import { FacturacionView } from './components/FacturacionView'
 import { FlotaView } from './components/FlotaView'
 import { HomeView } from './components/HomeView'
 import { MetricasView } from './components/MetricasView'
@@ -26,12 +25,12 @@ const VALID_TABS: TabId[] = [
   'flota',
   'clientes',
   'choferes',
-  'facturacion',
   'cuenta',
 ]
 
 function tabFromHash(): TabId {
   const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0]
+  if (raw === 'facturacion') return 'metricas'
   return VALID_TABS.includes(raw as TabId) ? (raw as TabId) : 'home'
 }
 
@@ -47,10 +46,21 @@ function AppContent() {
   }, [])
 
   useEffect(() => {
-    const onHash = () => setActiveTab(tabFromHash())
+    const onHash = () => {
+      const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0]
+      if (raw === 'facturacion') {
+        window.history.replaceState(null, '', '#/metricas')
+        setActiveTab('metricas')
+        return
+      }
+      setActiveTab(tabFromHash())
+    }
     window.addEventListener('hashchange', onHash)
     if (!window.location.hash) {
       window.history.replaceState(null, '', '#/home')
+    } else if (window.location.hash.replace(/^#\/?/, '').split('?')[0] === 'facturacion') {
+      window.history.replaceState(null, '', '#/metricas')
+      setActiveTab('metricas')
     }
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
@@ -65,7 +75,6 @@ function AppContent() {
       {activeTab === 'flota' && <FlotaView />}
       {activeTab === 'clientes' && <ClientesView />}
       {activeTab === 'choferes' && <ChoferesView />}
-      {activeTab === 'facturacion' && <FacturacionView />}
       {activeTab === 'cuenta' && <CuentaView />}
     </AppShell>
   )

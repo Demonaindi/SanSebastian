@@ -66,6 +66,7 @@ function emptyBucket(key: MonthKey): MonthBucket {
 export function buildMonthlyBuckets(input: {
   months: MonthKey[]
   viajes: {
+    id?: string
     fecha_viaje: string
     estado_viaje: string
     estado_pago: string
@@ -74,6 +75,7 @@ export function buildMonthlyBuckets(input: {
   }[]
   caja: { tipo: string; monto: number; created_at: string }[]
   presupuestos: { created_at: string }[]
+  abonadoByViaje?: Map<string, number>
 }): MonthBucket[] {
   const map = new Map(input.months.map((k) => [k, emptyBucket(k)]))
 
@@ -89,8 +91,15 @@ export function buildMonthlyBuckets(input: {
     const total = Number(v.precio_total) || 0
     bucket.facturado += total
     bucket.km += Number(v.distancia_km) || 0
-    if (v.estado_pago === 'Pagado') bucket.cobrado += total
-    else bucket.pendiente += total
+    const abonado =
+      v.id && input.abonadoByViaje
+        ? Number(input.abonadoByViaje.get(v.id) ?? 0)
+        : v.estado_pago === 'Pagado'
+          ? total
+          : 0
+    const cobrado = Math.min(Math.max(abonado, 0), total)
+    bucket.cobrado += cobrado
+    bucket.pendiente += Math.max(0, total - cobrado)
   }
 
   for (const m of input.caja) {

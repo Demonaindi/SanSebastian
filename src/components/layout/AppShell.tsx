@@ -12,7 +12,6 @@ import {
   Menu,
   User,
   UserCog,
-  Wallet,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -45,13 +44,12 @@ const allNavItems: {
     id: 'metricas',
     label: 'Números',
     icon: BarChart3,
-    description: 'Comparativa mes a mes',
+    description: 'Ganancias y comparativa',
     adminOnly: true,
   },
   { id: 'flota', label: 'Flota', icon: Bus, description: 'Gestionar vehículos', adminOnly: true },
   { id: 'clientes', label: 'Clientes', icon: Contact, description: 'CRM de clientes', adminOnly: true },
   { id: 'choferes', label: 'Choferes', icon: UserCog, description: 'Personal de conducción', adminOnly: true },
-  { id: 'facturacion', label: 'Facturación', icon: Wallet, description: 'Cobros y caja', adminOnly: true },
 ]
 
 const accountNavItem = {

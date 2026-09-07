@@ -7,5 +7,4 @@ export type TabId =
   | 'flota'
   | 'clientes'
   | 'choferes'
-  | 'facturacion'
   | 'cuenta'
