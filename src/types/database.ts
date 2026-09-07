@@ -117,6 +117,7 @@ export interface Presupuesto {
   paradas_intermedias: string | null
   created_by: string | null
   created_at: string
+  creador?: { nombre: string | null; email: string | null } | null
 }
 
 export interface CajaMovimiento {

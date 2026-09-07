@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileText, Image, Search } from 'lucide-react'
+import { FileText, Image, Search, Trash2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
@@ -7,7 +7,11 @@ import { formatPresupuestoNumero, formatVehiculoInterno, getCategoriaLabel } fro
 import { formatCurrency } from '../lib/quote'
 import type { QuoteExportData } from '../lib/exportQuote'
 import { exportQuoteImage } from '../lib/exportQuoteImage'
-import { listPresupuestos } from '../services/presupuestos'
+import {
+  deletePresupuesto,
+  formatCreadorPresupuesto,
+  listPresupuestos,
+} from '../services/presupuestos'
 import type { Presupuesto, Vehiculo } from '../types/database'
 import { ConfirmTripModal } from './modals/ConfirmTripModal'
 import type { TabId } from './TabBar'
@@ -60,6 +64,8 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [vehiculoId, setVehiculoId] = useState('')
   const [exportingImage, setExportingImage] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -99,6 +105,7 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
     const match = matchVehiculo(p, vehiculos)
     setVehiculoId(match?.id ?? '')
     setConfirmOpen(false)
+    setConfirmDeleteId(null)
   }
 
   const startConfirm = () => {
@@ -140,6 +147,29 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
       })
     } finally {
       setExportingImage(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id)
+      return
+    }
+    setDeleting(true)
+    try {
+      await deletePresupuesto(id)
+      setRows((prev) => prev.filter((r) => r.id !== id))
+      if (selected?.id === id) setSelected(null)
+      setConfirmDeleteId(null)
+      toast({ title: 'Cotización eliminada', tone: 'info' })
+    } catch (err) {
+      toast({
+        title: 'No se pudo eliminar',
+        message: err instanceof Error ? err.message : undefined,
+        tone: 'danger',
+      })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -216,6 +246,9 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
                   {p.vehiculo_nombre && <Badge variant="info">{p.vehiculo_nombre}</Badge>}
                   <span>{p.distancia_km} km</span>
                 </div>
+                <p className="text-xs text-slate-400">
+                  Creado por {formatCreadorPresupuesto(p)}
+                </p>
               </button>
             ))}
           </div>
@@ -229,6 +262,7 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
                       <th className="px-5 py-3 text-[10px] font-bold uppercase text-slate-500">N°</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase text-slate-500">Ruta</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase text-slate-500">Unidad</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase text-slate-500">Creado por</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase text-slate-500">Fecha</th>
                       <th className="px-5 py-3 text-right text-[10px] font-bold uppercase text-slate-500">
                         Total
@@ -253,6 +287,7 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
                           </p>
                         </td>
                         <td className="px-5 py-4 text-slate-600">{p.vehiculo_nombre ?? '—'}</td>
+                        <td className="px-5 py-4 text-slate-600">{formatCreadorPresupuesto(p)}</td>
                         <td className="px-5 py-4 text-slate-500">
                           {new Date(p.created_at).toLocaleString('es-AR')}
                         </td>
@@ -260,9 +295,28 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
                           {formatCurrency(Number(p.precio_total))}
                         </td>
                         <td className="px-5 py-4 text-right">
-                          <Button size="sm" variant="secondary" onClick={() => openDetail(p)}>
-                            Abrir
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => openDetail(p)}>
+                              Abrir
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(p.id)}
+                              className={`rounded-lg p-2 ${
+                                confirmDeleteId === p.id
+                                  ? 'bg-danger-muted text-danger'
+                                  : 'text-slate-400 hover:bg-danger-muted hover:text-danger'
+                              }`}
+                              title={
+                                confirmDeleteId === p.id
+                                  ? 'Tocá de nuevo para confirmar'
+                                  : 'Eliminar cotización'
+                              }
+                              disabled={deleting}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -281,6 +335,19 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
         wide
         footer={
           <>
+            <Button
+              variant="secondary"
+              className={
+                selected && confirmDeleteId === selected.id
+                  ? 'border-rose-200 text-danger hover:bg-danger-muted'
+                  : undefined
+              }
+              onClick={() => selected && void handleDelete(selected.id)}
+              loading={deleting}
+            >
+              <Trash2 className="h-4 w-4" />
+              {selected && confirmDeleteId === selected.id ? 'Confirmar borrado' : 'Eliminar'}
+            </Button>
             <Button variant="secondary" onClick={() => setSelected(null)}>
               Cerrar
             </Button>
@@ -312,7 +379,17 @@ export function CotizacionesView({ onNavigate }: CotizacionesViewProps) {
               <p className="mt-2 text-lg font-bold text-brand">
                 {formatCurrency(Number(selected.precio_total))}
               </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Creado por {formatCreadorPresupuesto(selected)} ·{' '}
+                {new Date(selected.created_at).toLocaleString('es-AR')}
+              </p>
             </div>
+
+            {confirmDeleteId === selected.id && (
+              <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                Tocá otra vez en Eliminar para borrar esta cotización.
+              </p>
+            )}
 
             <FormField label="Unidad de flota">
               <select

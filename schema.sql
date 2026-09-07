@@ -439,9 +439,10 @@ $$;
 
 -- Profiles
 drop policy if exists "profiles_select_own" on public.profiles;
+drop policy if exists "profiles_select_authenticated" on public.profiles;
 drop policy if exists "profiles_update_admin" on public.profiles;
-create policy "profiles_select_own" on public.profiles
-  for select to authenticated using (id = auth.uid() or public.is_admin());
+create policy "profiles_select_authenticated" on public.profiles
+  for select to authenticated using (true);
 create policy "profiles_update_admin" on public.profiles
   for update to authenticated using (public.is_admin());
 
@@ -490,8 +491,10 @@ create policy "caja_delete" on public.caja_diaria for delete to authenticated us
 
 drop policy if exists "presupuestos_select" on public.presupuestos;
 drop policy if exists "presupuestos_insert" on public.presupuestos;
+drop policy if exists "presupuestos_delete" on public.presupuestos;
 create policy "presupuestos_select" on public.presupuestos for select to authenticated using (true);
 create policy "presupuestos_insert" on public.presupuestos for insert to authenticated with check (true);
+create policy "presupuestos_delete" on public.presupuestos for delete to authenticated using (true);
 
 grant usage on schema public to authenticated;
 grant all on all tables in schema public to authenticated;

@@ -23,14 +23,29 @@ export interface GenerarPresupuestoInput {
   paradas_intermedias?: string | null
 }
 
-function normalizePresupuesto(row: Presupuesto): Presupuesto {
+function normalizePresupuesto(
+  row: Presupuesto,
+  creador?: { nombre: string | null; email: string | null } | null,
+): Presupuesto {
   return {
     ...row,
     condiciones_pago: row.condiciones_pago || CONDICIONES_PAGO_DEFAULT,
     adicionales: Array.isArray(row.adicionales) ? row.adicionales : [],
     valor_km: row.valor_km ?? null,
     precio_base: row.precio_base ?? null,
+    creador: creador ?? row.creador ?? null,
   }
+}
+
+function labelCreador(profile: { nombre: string | null; email: string | null } | null | undefined): string {
+  if (!profile) return '—'
+  const nombre = profile.nombre?.trim()
+  if (nombre) return nombre
+  return profile.email?.trim() || '—'
+}
+
+export function formatCreadorPresupuesto(p: Presupuesto): string {
+  return labelCreador(p.creador)
 }
 
 export async function generarPresupuesto(input: GenerarPresupuestoInput): Promise<Presupuesto> {
@@ -63,5 +78,27 @@ export async function listPresupuestos(limit = 20): Promise<Presupuesto[]> {
     .limit(limit)
 
   if (error) throw error
-  return (data ?? []).map((row) => normalizePresupuesto(row as Presupuesto))
+  const rows = (data ?? []) as Presupuesto[]
+  const ids = [...new Set(rows.map((r) => r.created_by).filter((id): id is string => !!id))]
+  if (ids.length === 0) return rows.map((row) => normalizePresupuesto(row))
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, nombre, email')
+    .in('id', ids)
+
+  if (profilesError) throw profilesError
+
+  const byId = new Map(
+    (profiles ?? []).map((p) => [p.id as string, { nombre: p.nombre ?? null, email: p.email ?? null }]),
+  )
+
+  return rows.map((row) =>
+    normalizePresupuesto(row, row.created_by ? byId.get(row.created_by) ?? null : null),
+  )
+}
+
+export async function deletePresupuesto(id: string): Promise<void> {
+  const { error } = await supabase.from('presupuestos').delete().eq('id', id)
+  if (error) throw error
 }
