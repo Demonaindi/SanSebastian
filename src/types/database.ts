@@ -83,6 +83,25 @@ export interface ViajeWithRelations extends Viaje {
   clientes?: Pick<Cliente, 'nombre_razon_social' | 'telefono'> | null
   choferes?: Pick<Chofer, 'nombre'> | null
   vehiculos?: Pick<Vehiculo, 'nombre' | 'numero_interno' | 'categoria' | 'color'> | null
+  viaje_choferes?: ViajeChoferWithNombre[]
+}
+
+export interface ViajeChofer {
+  id: string
+  viaje_id: string
+  chofer_id: string
+  viaticos: number
+  orden: number
+  created_at?: string
+}
+
+export interface ViajeChoferWithNombre extends ViajeChofer {
+  choferes?: Pick<Chofer, 'nombre' | 'estado'> | null
+}
+
+export interface ViajeChoferInput {
+  chofer_id: string
+  viaticos: number
 }
 
 export interface AdicionalCatalogo {

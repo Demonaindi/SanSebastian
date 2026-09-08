@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { UserPlus } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { createCliente } from '../../services/clientes'
-import { confirmarViaje, syncChoferEstado } from '../../services/viajes'
+import { confirmarViaje } from '../../services/viajes'
+import { setViajeChoferes } from '../../services/viajeChoferes'
+import { emptyChoferSlots, slotsToInput, type ChoferSlotForm } from '../../lib/viajeChoferes'
 import { formatVehiculoInterno, getVehiculoDocLevel } from '../../lib/mappers'
+import { ViajeChoferesFields } from '../ViajeChoferesFields'
 import { Button, FormField, Modal } from '../ui'
 
 interface DirectReserveModalProps {
@@ -38,7 +41,7 @@ export function DirectReserveModal({
   const [precio, setPrecio] = useState('')
   const [paradas, setParadas] = useState('')
   const [clienteId, setClienteId] = useState('')
-  const [choferId, setChoferId] = useState('')
+  const [choferSlots, setChoferSlots] = useState<ChoferSlotForm[]>(() => emptyChoferSlots(1))
   const [showNewCliente, setShowNewCliente] = useState(false)
   const [newNombre, setNewNombre] = useState('')
   const [newTelefono, setNewTelefono] = useState('')
@@ -50,10 +53,9 @@ export function DirectReserveModal({
     setSelectedVehiculoId(vehiculoId || '')
     setFechaDesde(fechaInicio)
     setFechaHasta(fechaFin || fechaInicio)
+    setChoferSlots(emptyChoferSlots(1))
     setError('')
   }, [open, fechaInicio, fechaFin, vehiculoId])
-
-  const choferesOpts = useMemo(() => choferes, [choferes])
 
   const docWarning = useMemo(() => {
     if (!vehiculo) return null
@@ -110,7 +112,8 @@ export function DirectReserveModal({
     setLoading(true)
     setError('')
     try {
-      await confirmarViaje({
+      const choferItems = slotsToInput(choferSlots)
+      const viajeId = await confirmarViaje({
         origen: origen.trim(),
         destino: destino.trim(),
         pasajeros: pax,
@@ -124,10 +127,10 @@ export function DirectReserveModal({
         precio_base_calculado: monto,
         paradas_intermedias: paradas.trim() || null,
         cliente_id: clienteId,
-        chofer_id: choferId || null,
+        chofer_id: choferItems[0]?.chofer_id ?? null,
         vehiculo_id: vehiculo.id,
       })
-      await syncChoferEstado(choferId || null)
+      await setViajeChoferes(viajeId, choferItems)
       await refreshAll()
       onSuccess()
       onClose()
@@ -276,16 +279,12 @@ export function DirectReserveModal({
           </div>
         )}
 
-        <FormField label="Chofer (opcional)">
-          <select value={choferId} onChange={(e) => setChoferId(e.target.value)} className="input-field">
-            <option value="">Asignar después...</option>
-            {choferesOpts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-              </option>
-            ))}
-          </select>
-        </FormField>
+        <ViajeChoferesFields
+          slots={choferSlots}
+          onChange={setChoferSlots}
+          choferes={choferes}
+          disabled={loading}
+        />
 
         {error && <p className="rounded-lg bg-danger-muted px-3 py-2 text-sm text-danger">{error}</p>}
       </div>

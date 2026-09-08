@@ -12,6 +12,21 @@ const VIAJE_RELATIONS = `
   *,
   clientes ( nombre_razon_social, telefono ),
   choferes ( nombre ),
+  vehiculos ( nombre, numero_interno, categoria, color ),
+  viaje_choferes (
+    id,
+    viaje_id,
+    chofer_id,
+    viaticos,
+    orden,
+    choferes ( nombre, estado )
+  )
+`
+
+const VIAJE_RELATIONS_LEGACY = `
+  *,
+  clientes ( nombre_razon_social, telefono ),
+  choferes ( nombre ),
   vehiculos ( nombre, numero_interno, categoria, color )
 `
 
@@ -21,8 +36,15 @@ export async function fetchViajes(): Promise<ViajeWithRelations[]> {
     .select(VIAJE_RELATIONS)
     .order('fecha_viaje', { ascending: true, nullsFirst: false })
 
-  if (error) throw error
-  return (data ?? []) as ViajeWithRelations[]
+  if (!error) return (data ?? []) as ViajeWithRelations[]
+
+  const { data: legacy, error: legacyError } = await supabase
+    .from('viajes')
+    .select(VIAJE_RELATIONS_LEGACY)
+    .order('fecha_viaje', { ascending: true, nullsFirst: false })
+
+  if (legacyError) throw error
+  return (legacy ?? []) as ViajeWithRelations[]
 }
 
 export async function confirmarViaje(payload: ConfirmarViajePayload): Promise<string> {

@@ -3,10 +3,13 @@ import { UserPlus } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useData } from '../../contexts/DataContext'
 import { createCliente } from '../../services/clientes'
-import { confirmarViaje, syncChoferEstado } from '../../services/viajes'
+import { confirmarViaje } from '../../services/viajes'
+import { setViajeChoferes } from '../../services/viajeChoferes'
+import { emptyChoferSlots, slotsToInput, type ChoferSlotForm } from '../../lib/viajeChoferes'
 import { formatCurrency } from '../../lib/quote'
 import { getCategoriaLabel, formatVehiculoInterno, getVehiculoDocLevel } from '../../lib/mappers'
 import type { AdicionalLinea, Vehiculo } from '../../types/database'
+import { ViajeChoferesFields } from '../ViajeChoferesFields'
 import { Button, FormField, Modal } from '../ui'
 
 interface ConfirmTripModalProps {
@@ -59,7 +62,7 @@ export function ConfirmTripModal({
   const { isAdmin } = useAuth()
   const { clientes, choferes, refreshAll } = useData()
   const [clienteId, setClienteId] = useState('')
-  const [choferId, setChoferId] = useState('')
+  const [choferSlots, setChoferSlots] = useState<ChoferSlotForm[]>(() => emptyChoferSlots(1))
   const [fecha, setFecha] = useState(fechaViaje)
   const [hasta, setHasta] = useState(fechaHasta || fechaViaje)
   const [horaSalida, setHoraSalida] = useState(horaViaje)
@@ -81,15 +84,10 @@ export function ConfirmTripModal({
     setHoraLlegada(horaLlegadaAprox)
     setHoraVuelta(horaRegreso)
     setClienteId('')
-    setChoferId('')
+    setChoferSlots(emptyChoferSlots(1))
     setShowNewCliente(false)
     setError('')
   }, [open, fechaViaje, fechaHasta, horaViaje, horaLlegadaAprox, horaRegreso])
-
-  const choferesDisponibles = useMemo(
-    () => choferes.filter((c) => c.estado === 'Disponible' || c.estado === 'En viaje'),
-    [choferes],
-  )
 
   const docWarning = useMemo(() => {
     const level = getVehiculoDocLevel(vehiculo)
@@ -143,7 +141,8 @@ export function ConfirmTripModal({
     const regresoFinal = editableSchedule ? horaVuelta : horaRegreso
 
     try {
-      await confirmarViaje({
+      const choferItems = slotsToInput(choferSlots)
+      const viajeId = await confirmarViaje({
         origen,
         destino,
         pasajeros,
@@ -160,10 +159,10 @@ export function ConfirmTripModal({
         adicionales: adicionales ?? [],
         paradas_intermedias: paradasIntermedias || null,
         cliente_id: clienteId,
-        chofer_id: choferId || null,
+        chofer_id: choferItems[0]?.chofer_id ?? null,
         vehiculo_id: vehiculo.id,
       })
-      await syncChoferEstado(choferId || null)
+      await setViajeChoferes(viajeId, choferItems)
       await refreshAll()
       onSuccess()
       onClose()
@@ -320,20 +319,13 @@ export function ConfirmTripModal({
           </div>
         )}
 
-        <FormField label="Chofer (opcional)">
-          <select value={choferId} onChange={(e) => setChoferId(e.target.value)} className="input-field">
-            <option value="">Asignar después...</option>
-            {choferesDisponibles.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-                {c.estado === 'En viaje' ? ' (en viaje)' : ''}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-[11px] text-slate-400">
-            Al asignarlo queda En viaje automáticamente; al finalizar el viaje vuelve a Disponible.
-          </p>
-        </FormField>
+        <ViajeChoferesFields
+          slots={choferSlots}
+          onChange={setChoferSlots}
+          choferes={choferes}
+          onlyDisponibles
+          disabled={loading}
+        />
 
         {error && <p className="rounded-lg bg-danger-muted px-3 py-2 text-sm text-danger">{error}</p>}
       </div>

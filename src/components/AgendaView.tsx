@@ -17,10 +17,17 @@ import {
   finalizarViaje,
   reprogramarViaje,
   syncChoferEstado,
-  updateViajeChofer,
   updateViajeEstadoPago,
   updateViajePrecio,
 } from '../services/viajes'
+import { setViajeChoferes } from '../services/viajeChoferes'
+import {
+  choferIdsFromViaje,
+  formatViajeChoferes,
+  slotsFromViaje,
+  slotsToInput,
+  type ChoferSlotForm,
+} from '../lib/viajeChoferes'
 import {
   createViajePago,
   deleteViajePago,
@@ -29,6 +36,7 @@ import {
 } from '../services/viajePagos'
 import type { EstadoPago, ViajePago, ViajeWithRelations } from '../types/database'
 import { DirectReserveModal } from './modals/DirectReserveModal'
+import { ViajeChoferesFields } from './ViajeChoferesFields'
 import {
   Badge,
   Button,
@@ -144,10 +152,10 @@ export function AgendaView() {
     hora_viaje: '',
     hora_regreso: '',
     vehiculo_id: '',
-    chofer_id: '',
     estado_pago: 'Pendiente' as EstadoPago,
     precio_total: '',
   })
+  const [choferSlots, setChoferSlots] = useState<ChoferSlotForm[]>([{ chofer_id: '', viaticos: '' }])
   const [señaForm, setSeñaForm] = useState({ monto: '', fecha_pago: '', observaciones: '' })
   const [busy, setBusy] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -270,10 +278,10 @@ export function AgendaView() {
       hora_viaje: viaje.hora_viaje?.slice(0, 5) ?? '',
       hora_regreso: viaje.hora_regreso?.slice(0, 5) ?? '',
       vehiculo_id: viaje.vehiculo_id ?? '',
-      chofer_id: viaje.chofer_id ?? '',
       estado_pago: viaje.estado_pago,
       precio_total: String(Number(viaje.precio_total)),
     })
+    setChoferSlots(slotsFromViaje(viaje))
     setSeñaForm({
       monto: '',
       fecha_pago: toDateKey(new Date()),
@@ -317,11 +325,11 @@ export function AgendaView() {
       } else if (editForm.estado_pago !== editing.estado_pago) {
         await updateViajeEstadoPago(editing.id, editForm.estado_pago)
       }
-      if ((editForm.chofer_id || null) !== (editing.chofer_id || null)) {
-        await updateViajeChofer(editing.id, editForm.chofer_id || null)
-        await syncChoferEstado(editing.chofer_id)
-        await syncChoferEstado(editForm.chofer_id || null)
-      }
+      await setViajeChoferes(
+        editing.id,
+        slotsToInput(choferSlots),
+        choferIdsFromViaje(editing),
+      )
       await refreshAll()
       setEditing(null)
       toast({ title: 'Viaje actualizado', tone: 'success' })
@@ -342,9 +350,9 @@ export function AgendaView() {
     setBusy(true)
     setActionError('')
     try {
-      const choferId = editing.chofer_id
+      const choferIds = choferIdsFromViaje(editing)
       await cancelarViaje(editing.id)
-      await syncChoferEstado(choferId)
+      await Promise.all(choferIds.map((id) => syncChoferEstado(id)))
       await refreshAll()
       setEditing(null)
       setConfirmCancel(false)
@@ -362,12 +370,16 @@ export function AgendaView() {
     setBusy(true)
     setActionError('')
     try {
-      const choferId = editing.chofer_id
+      const choferIds = choferIdsFromViaje(editing)
       await finalizarViaje(editing.id)
-      await syncChoferEstado(choferId)
+      await Promise.all(choferIds.map((id) => syncChoferEstado(id)))
       await refreshAll()
       setEditing(null)
-      toast({ title: 'Viaje finalizado', message: 'El chofer quedó Disponible si no tiene otro viaje', tone: 'success' })
+      toast({
+        title: 'Viaje finalizado',
+        message: 'Los choferes quedan Disponibles si no tienen otro viaje',
+        tone: 'success',
+      })
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'No se pudo finalizar')
       toast({ title: 'No se pudo finalizar', tone: 'danger' })
@@ -1214,20 +1226,12 @@ export function AgendaView() {
                     ))}
                   </select>
                 </FormField>
-                <FormField label="Chofer">
-                  <select
-                    value={editForm.chofer_id}
-                    onChange={(e) => setEditForm({ ...editForm, chofer_id: e.target.value })}
-                    className="input-field"
-                  >
-                    <option value="">Sin asignar</option>
-                    {choferes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nombre} · {c.estado}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
+                <ViajeChoferesFields
+                  slots={choferSlots}
+                  onChange={setChoferSlots}
+                  choferes={choferes}
+                  disabled={busy}
+                />
                 {confirmCancel && (
                   <p className="rounded-2xl bg-rose-50 px-3 py-2 text-sm text-rose-700">
                     ¿Seguro que querés cancelar este viaje? Tocá otra vez para confirmar.
@@ -1257,10 +1261,25 @@ export function AgendaView() {
                   <span className="font-semibold text-slate-800">Unidad:</span>{' '}
                   {editing.vehiculos ? formatVehiculoInterno(editing.vehiculos) : '—'}
                 </p>
-                <p>
-                  <span className="font-semibold text-slate-800">Chofer:</span>{' '}
-                  {editing.choferes?.nombre ?? '—'}
-                </p>
+                <div>
+                  <span className="font-semibold text-slate-800">Choferes:</span>
+                  {(editing.viaje_choferes?.length ?? 0) > 0 ? (
+                    <ul className="mt-1 space-y-1">
+                      {[...(editing.viaje_choferes ?? [])]
+                        .sort((a, b) => a.orden - b.orden)
+                        .map((r) => (
+                          <li key={r.id} className="flex justify-between gap-3 text-sm">
+                            <span>{r.choferes?.nombre ?? 'Chofer'}</span>
+                            <span className="font-mono text-slate-500">
+                              {formatCurrency(Number(r.viaticos) || 0)}
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                  ) : (
+                    <span> {formatViajeChoferes(editing)}</span>
+                  )}
+                </div>
               </div>
             )}
 
