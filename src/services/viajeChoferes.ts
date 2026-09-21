@@ -16,6 +16,7 @@ export async function setViajeChoferes(
     .map((x) => ({
       chofer_id: x.chofer_id,
       viaticos: Number.isFinite(x.viaticos) && x.viaticos > 0 ? x.viaticos : 0,
+      pago_viaje: Number.isFinite(x.pago_viaje) && x.pago_viaje > 0 ? x.pago_viaje : 0,
     }))
 
   const ids = cleaned.map((x) => x.chofer_id)
@@ -37,6 +38,7 @@ export async function setViajeChoferes(
         viaje_id: viajeId,
         chofer_id: x.chofer_id,
         viaticos: x.viaticos,
+        pago_viaje: x.pago_viaje,
         orden: i + 1,
       }))
       const { error: insError } = await supabase.from('viaje_choferes').insert(rows)

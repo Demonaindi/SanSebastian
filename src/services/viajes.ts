@@ -18,6 +18,7 @@ const VIAJE_RELATIONS = `
     viaje_id,
     chofer_id,
     viaticos,
+    pago_viaje,
     orden,
     choferes ( nombre, estado )
   )

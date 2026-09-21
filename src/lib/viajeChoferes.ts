@@ -5,12 +5,14 @@ export const MAX_CHOFERES_POR_VIAJE = 3
 export type ChoferSlotForm = {
   chofer_id: string
   viaticos: string
+  pago_viaje: string
 }
 
 export function emptyChoferSlots(count = 1): ChoferSlotForm[] {
   return Array.from({ length: Math.min(Math.max(count, 1), MAX_CHOFERES_POR_VIAJE) }, () => ({
     chofer_id: '',
     viaticos: '',
+    pago_viaje: '',
   }))
 }
 
@@ -20,10 +22,11 @@ export function slotsFromViaje(viaje: ViajeWithRelations): ChoferSlotForm[] {
     return rows.map((r) => ({
       chofer_id: r.chofer_id,
       viaticos: Number(r.viaticos) > 0 ? String(Number(r.viaticos)) : '',
+      pago_viaje: Number(r.pago_viaje) > 0 ? String(Number(r.pago_viaje)) : '',
     }))
   }
   if (viaje.chofer_id) {
-    return [{ chofer_id: viaje.chofer_id, viaticos: '' }]
+    return [{ chofer_id: viaje.chofer_id, viaticos: '', pago_viaje: '' }]
   }
   return emptyChoferSlots(1)
 }
@@ -34,6 +37,7 @@ export function slotsToInput(slots: ChoferSlotForm[]): ViajeChoferInput[] {
     .map((s) => ({
       chofer_id: s.chofer_id,
       viaticos: parseFloat(s.viaticos) || 0,
+      pago_viaje: parseFloat(s.pago_viaje) || 0,
     }))
 }
 
@@ -65,12 +69,13 @@ export function formatViajeChoferes(
 export function formatViajeChoferesDetalle(
   rows: ViajeChoferWithNombre[] | undefined,
   formatMoney: (n: number) => string,
-): { nombre: string; viaticos: string }[] {
+): { nombre: string; viaticos: string; pago_viaje: string }[] {
   return [...(rows ?? [])]
     .sort((a, b) => a.orden - b.orden)
     .map((r) => ({
       nombre: r.choferes?.nombre ?? 'Chofer',
       viaticos: formatMoney(Number(r.viaticos) || 0),
+      pago_viaje: formatMoney(Number(r.pago_viaje) || 0),
     }))
 }
 

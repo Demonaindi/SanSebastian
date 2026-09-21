@@ -155,7 +155,9 @@ export function AgendaView() {
     estado_pago: 'Pendiente' as EstadoPago,
     precio_total: '',
   })
-  const [choferSlots, setChoferSlots] = useState<ChoferSlotForm[]>([{ chofer_id: '', viaticos: '' }])
+  const [choferSlots, setChoferSlots] = useState<ChoferSlotForm[]>([
+    { chofer_id: '', viaticos: '', pago_viaje: '' },
+  ])
   const [señaForm, setSeñaForm] = useState({ monto: '', fecha_pago: '', observaciones: '' })
   const [busy, setBusy] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -1268,11 +1270,16 @@ export function AgendaView() {
                       {[...(editing.viaje_choferes ?? [])]
                         .sort((a, b) => a.orden - b.orden)
                         .map((r) => (
-                          <li key={r.id} className="flex justify-between gap-3 text-sm">
-                            <span>{r.choferes?.nombre ?? 'Chofer'}</span>
-                            <span className="font-mono text-slate-500">
-                              {formatCurrency(Number(r.viaticos) || 0)}
-                            </span>
+                          <li key={r.id} className="space-y-0.5 text-sm">
+                            <p className="font-medium text-slate-800">{r.choferes?.nombre ?? 'Chofer'}</p>
+                            <p className="flex justify-between gap-3 font-mono text-slate-500">
+                              <span>Viáticos</span>
+                              <span>{formatCurrency(Number(r.viaticos) || 0)}</span>
+                            </p>
+                            <p className="flex justify-between gap-3 font-mono text-slate-500">
+                              <span>Pago de viaje</span>
+                              <span>{formatCurrency(Number(r.pago_viaje) || 0)}</span>
+                            </p>
                           </li>
                         ))}
                     </ul>

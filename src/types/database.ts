@@ -91,6 +91,7 @@ export interface ViajeChofer {
   viaje_id: string
   chofer_id: string
   viaticos: number
+  pago_viaje: number
   orden: number
   created_at?: string
 }
@@ -102,6 +103,7 @@ export interface ViajeChoferWithNombre extends ViajeChofer {
 export interface ViajeChoferInput {
   chofer_id: string
   viaticos: number
+  pago_viaje: number
 }
 
 export interface AdicionalCatalogo {

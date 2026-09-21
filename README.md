@@ -38,6 +38,7 @@ npm run dev -- --host
 - `supabase/functions_operativas.sql`
 - `supabase/sync_chofer_estado.sql` (estado automático de choferes + finalizar viaje)
 - `supabase/migration_viaje_choferes.sql` (hasta 3 choferes por viaje + viáticos)
+- `supabase/migration_viaje_choferes_pago.sql` (pago de viaje por chofer)
 
 4. Usuarios demo (opcional):
 
